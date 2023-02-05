@@ -1,1 +1,1 @@
-Git repository for the website https://juripfammatter.github.io/website/.
+Git repository for the website www.juripfammatter.com. 
