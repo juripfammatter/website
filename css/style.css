@@ -48,10 +48,25 @@ body {
     width:100%;
 }
     .footer-text-right{
+        float: right;
+        width: 40%;
         margin-top:20px;
         font-family: 'IBM Plex Sans', Helvetica, sans-serif;
         text-align: right;
         padding-right: 25px;
+    }
+    
+
+    .footer-text-left{
+      float: left;
+        width: 40%;
+        margin-top:20px;
+        font-family: 'IBM Plex Sans', Helvetica, sans-serif;
+        text-align: left;
+        padding-right: 25px;
+    }
+    .footer-text-left a{
+      padding-right: 10px;
     }
 
     
