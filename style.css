@@ -22,17 +22,16 @@ body {
     text-decoration: none;
     color: rgb(0, 117, 101);
   }
-
-  a:hover {
-    text-decoration: none;
-    color: rgb(0, 220, 190);
-  }
-
+  
   a:visited {
     text-decoration: none;
     color: rgb(0, 117, 101);
   }
 
+  a:hover {
+    text-decoration: none;
+    color: rgb(0, 220, 190);
+  }
 
 .footer {
     background-color: rgb(0, 220, 190);
