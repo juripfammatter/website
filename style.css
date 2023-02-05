@@ -47,11 +47,11 @@ body {
     height:60px;
     width:100%;
 }
-    footer-text-right{
+    .footer-text-right{
         margin-top:20px;
         font-family: 'IBM Plex Sans', Helvetica, sans-serif;
         text-align: right;
-        padding-right: 5%;
+        padding-right: 25px;
     }
 
     
