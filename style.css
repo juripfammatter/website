@@ -17,6 +17,11 @@ body {
     padding-right: 15px;
     padding-left: 15px;
   }
+  img{
+    float:left;
+    padding-right: 20px;
+    padding-bottom: 20px;
+  }
 
   /* links */
   a:link {
