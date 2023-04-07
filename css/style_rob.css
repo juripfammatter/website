@@ -1,0 +1,118 @@
+
+body {
+    background-color: rgb(255, 241, 200);
+    background-image: url('../img/rob_background.jpg');
+    background-size: 100%;
+    background-repeat: no-repeat;
+
+    min-height: 100%;
+    padding-top: 20px;
+    padding-bottom: 60px;
+    padding-right: 20px;
+    padding-left: 40px;
+  }
+  h1 {
+    color: rgb(255, 255, 255);
+    font-family: 'Playfair Display', Helvetica, sans-serif;
+    font-weight: 500;
+    font-size: 550%;
+    margin-top: 0px;
+    margin-bottom: 0px;
+    text-align: left;
+  }
+  h2 {
+    color: rgb(255, 255, 255);
+    font-family: 'Anuphan', Helvetica, sans-serif;
+    font-weight: 200;
+    margin-top: 0px;
+    text-align: left;
+  }
+
+  p {
+    color: black;
+    font-family: 'Anuphan', Helvetica, sans-serif;
+    font-weight: 300;
+    text-align: left;
+    
+  }
+  img{
+    float:left;
+  }
+
+  button{
+    border: 0.75px solid rgb(255, 255, 255);
+    background-color: transparent;
+    margin-left: 0px;
+    margin-right: 20px;
+    height: 22px;
+    width: 50px;
+    text-align: center;
+    font-family: 'Anuphan', Helvetica, sans-serif;
+    font-weight: 300;
+  }
+  
+  /* links */
+  a:link {
+    text-decoration: none;
+    color: rgb(255, 255, 255);
+  }
+
+  a:visited {
+    text-decoration: none;
+    color: rgb(255, 255, 255);
+  }
+
+  a:hover {
+    text-decoration: none;
+    color: rgb(255, 255, 255);
+  }
+
+
+/* header*/
+.header {
+  position:fixed;
+  top:0;
+  left: 0;
+  height:60px;
+  width:100%;
+}
+
+    .header p{
+      color: rgb(0, 117, 101);
+      font-family: 'IBM Plex Sans', Helvetica, sans-serif;
+      font-weight: 600;
+      font-size: 20pt;
+      text-align: left;
+      margin-top: 20px;
+      padding-left: 20px;
+      
+    }
+
+/* footer*/
+.footer {
+    background-color: rgb(0, 220, 190);
+    position:fixed;
+    bottom:0;
+    left: 0;
+    height:60px;
+    width:100%;
+}
+    .footer-text-right{
+        float: right;
+        margin-top:20px;
+        font-family: 'IBM Plex Sans', Helvetica, sans-serif;
+        text-align: right;
+        padding-right: 30px;
+    }
+    
+
+    .footer-text-left{
+      float: left;
+        margin-top:20px;
+        font-family: 'IBM Plex Sans', Helvetica, sans-serif;
+        text-align: left;
+        padding-left: 30px;
+    }
+    .footer-text-left a{
+      padding-right: 10px;
+    }
