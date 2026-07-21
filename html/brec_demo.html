@@ -193,14 +193,31 @@
   .compare-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
   @media (max-width: 900px) { .compare-grid { grid-template-columns: 1fr; } }
   .compare-cell h3 { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
-  .compare-cell canvas { width: 100%; height: auto; border-radius: 8px; }
+  .compare-cell canvas { 
+    display:block; width: 100%; aspect-ratio: 1 / 1; height: auto; margin: 0 auto;
+    /* Caps the square canvas so header + toolbar + the grid itself always fit one viewport height --
+       otherwise a wide window (the explain-grid's left column can exceed 1000px) makes the grid taller
+       than the visible area, and the bottom rows scroll out of view. aspect-ratio keeps width/height
+       in lockstep, so capping max-width alone caps height too. 230px is a deliberately generous
+       estimate of the header + main/panel padding + toolbar above it -- erring high just shrinks the
+       grid a little more than strictly necessary, whereas erring low reintroduces the clipping. */
+    max-width: min(100%, calc(50vh - 300px))
+  }
   .compare-banner {
     margin-top: 6px; font-size: 11.5px; padding: 5px 8px; border-radius: 6px;
     background: var(--success-soft); color: var(--success); display:none; font-weight:600;
   }
   .compare-banner.show { display:block; }
   .chart-wrap { margin-top: 18px; }
-  .chart-wrap canvas { width: 100%; height: auto; }
+  .chart-wrap canvas { 
+    display:block; width: 100%; aspect-ratio: auto; height: auto; margin: 0 auto;
+    /* Caps the square canvas so header + toolbar + the grid itself always fit one viewport height --
+       otherwise a wide window (the explain-grid's left column can exceed 1000px) makes the grid taller
+       than the visible area, and the bottom rows scroll out of view. aspect-ratio keeps width/height
+       in lockstep, so capping max-width alone caps height too. 230px is a deliberately generous
+       estimate of the header + main/panel padding + toolbar above it -- erring high just shrinks the
+       grid a little more than strictly necessary, whereas erring low reintroduces the clipping. */
+    max-width: min(100%, calc(100vh - 230px))}
   .chart-wrap h2 { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-dim); margin-bottom:6px; }
   .chart-legend { display:flex; gap:14px; flex-wrap:wrap; font-size:11.5px; color:var(--ink-dim); margin-top:6px; }
   .chart-legend .item { display:flex; align-items:center; gap:5px; }
