@@ -355,7 +355,7 @@
         <details class="accordion">
           <summary>Policy simulation</summary>
           <div class="body">
-            <div class="field"><label>skill transfer <span class="sub">simulated skill exchange between trees</span></label><span class="val" id="v_crossBoost"></span><input type="range" id="crossBoost" min="0" max="1" step="0.01"></div>
+            <div class="field"><label>skill transfer <span class="sub">simulated skill exchange between trees</span></label><span class="val" id="v_crossBoost"></span><input type="range" id="crossBoost" min="0" max="0.5" step="0.01"></div>
           </div>
         </details>
 
@@ -479,6 +479,8 @@
       <ul><li>The reachability branch, the greedy seed mode, and the runner-side walk-tail split (<code>random_reachability_ratio</code>) are absent — matching the no-reachability arm this demo targets. The forward/backward walk split is derived from which branches are active, so a single-direction mode never spends walk envs on the inactive direction.</li></ul>
       <h3>Standing assumption</h3>
       <ul><li>The competence model makes sub-skill <em>composition</em> nearly automatic: once every cell on a path is practiced, a rollout crossing it succeeds unless the finite horizon or a per-step stall intervenes. This mirrors the algorithm's own premise — that a goal-conditioned policy which has separately mastered two adjoining regions can chain them — rather than proving it independently.</li></ul>
+      <h3>Two competence fields, not one</h3>
+      <ul><li>The real system trains a <em>single</em> goal-conditioned policy on both forward and backward tasks, so its competence is genuinely shared — backward practice near the goal directly improves forward trips through the same cells. This demo instead gives each tree its <strong>own</strong> competence field, deliberately breaking that sharing. With one shared field the two trees connect the instant their practiced regions touch, which reads as a start→goal solution appearing before the forward frontier has itself reached the goal — technically faithful to the shared policy, but it hides the per-tree expansion the demo is built to show. Separate fields make each tree earn its own end; the <em>skill transfer</em> slider then re-introduces cross-tree help explicitly (it nudges a cell the other tree has already <em>proven</em> toward full competence), so composition becomes a visible, opt-in effect rather than a hidden default. It is off by default.</li></ul>
     </div>
   </div>
 </main>
@@ -738,7 +740,7 @@ function policyRollout(grid, distCache, spawnState, goalXY, comp, cfg, rng, boos
     }
   }
   const finalDist = isFinite(distArr[curCellIdx]) ? distArr[curCellIdx] : startDist;
-  const reward = !startReachable ? 0 : startDist <= 0 ? 1 : clamp(1 - finalDist / startDist, 0, 1);
+  const reward = !startReachable ? 0 : startDist <= 0 ? 1 : clamp(2 - finalDist, 0, 2);
   // Derived from the same (now always-accurate) curCellIdx/distArr that reward and finalCellIdx
   // use, so "arrived" -- which snaps the drawn path exactly onto the goal marker -- can never
   // disagree with them again.
@@ -813,6 +815,16 @@ class SimilarityBuffer {
     this._evict();
     return kept;
   }
+  /* Promotion hook: drops any entry within minSqDist of row (same eps used to admit it), so a
+     frontier state that has since been solved elsewhere doesn't linger as a stale duplicate. */
+  removeSimilar(row, minSqDist) {
+    const v = this.noveltyProj(row);
+    for (let i = this.items.length - 1; i >= 0; i--) {
+      if (sqDist(this.noveltyVecs[i], v) < minSqDist) {
+        this.items.splice(i, 1); this.searchVecs.splice(i, 1); this.noveltyVecs.splice(i, 1);
+      }
+    }
+  }
   getSimilar(query, knn, rng) {
     if (this.items.length === 0) return null;
     const dists = this.searchVecs.map((v, i) => [sqDist(v, query), i]);
@@ -844,22 +856,26 @@ function defaultCfg() {
     anchorRatio: 0.0, fwdExploreRatio: 0.35, fwdExploitRatio: 0.15, bwdExploreRatio: 0.35, bwdExploitRatio: 0.15,
     goalConnectRatio: 0.5, skillConnectRatio: 0.5,
     // cross-tree hand-off boost: how far a cell the OPPOSITE tree has proven is nudged toward full
-    // competence when this tree rolls through it (0 = off, the shipped algorithm has no such term)
-    crossBoost: 0.75,
-    numTrainEnvs: 16, numWalkEnvs: 16,
+    // competence when this tree rolls through it. Now the SOLE cross-tree coupling (the trees no
+    // longer share a competence field), so it defaults OFF -- the shipped behaviour is two fully
+    // independent trees, each earning its own end. Raise the "skill transfer" slider to opt into
+    // cross-tree help and watch the two frontiers accelerate each other where they overlap. The real
+    // no-reachability algorithm has no such term.
+    crossBoost: 0.15,
+    numTrainEnvs: 32, numWalkEnvs: 16,
     walkHorizonForward: 10, walkHorizonBackward: 10,
     // caps one rollout's step budget, so a journey longer than this times out with partial credit
     // (frontier band) even when every cell on the way is fully practised
     maxSteps: 90,
     // fixed competence model (no longer slider-exposed)
-    competenceLR: 0.24, alpha: 1.1, spillover: 0.01,
+    competenceLR: 0.24, alpha: 1.1, spillover: 0.05,
     // fixed algorithm knobs.
     // selectKnn=1 makes voronoi selection EXACT nearest-neighbour, i.e. textbook Voronoi-cell-
     // proportional sampling: a buffer entry is picked with probability equal to the share of free
     // space closer to it than to any other entry. The real presets use 4, which softens the bias
     // for diversity -- at this demo's buffer sizes that softening is indistinguishable from uniform
     // selection, which hides the mechanism entirely. See the notes tab.
-    selectKnn: 1, rMin: 0.15, rMax: 0.75, frontierEps: 0.05, candidateEps: 0.12,
+    selectKnn: 1, rMin: 0.0, rMax: 1.0, frontierEps: 0.05, candidateEps: 0.12,
     // goalReplayRatio back to the shipped preset's 0.4. At 0.0 the mixed buffer was frontier-ONLY,
     // and since goal_frontier grows far more slowly than goal_solved (only rollouts landing inside
     // the r_min..r_max band qualify), the walk-seeding pool collapsed to ~3 entries — so voronoi
@@ -870,13 +886,19 @@ function defaultCfg() {
     // OUTRIGHT (reward > r_max), so it lands in start_solved -- which a 0.0 replay ratio excludes
     // from mixed_start. start_frontier then holds little more than the bootstrap entry, and the
     // backward voronoi search kept re-selecting the goal itself, so the backward tree never spread.
-    goalReplayRatio: 0.4, startReplayRatio: 0.4,
+    goalReplayRatio: 0.3, startReplayRatio: 0.3,
     // Rebuild every iteration rather than every 5. The real system's interval is in environment
     // steps with thousands of envs filling the buffers, so staleness is invisible there; at this
     // demo's scale a 5-iteration freeze pins the seed pool to whatever it held 5 iterations ago.
     updateInterval: 1, seed: 42,
     defaultV: 0.55, turnRateMax: 0.9, dt: 1, thetaWeight: 0.6,
     frontierBufSize: 300, mixedBufSize: 200, candidateBufSize: 400,
+    // solved buffers are effectively unbounded: once a state is proven solved it stays proven, so
+    // unlike frontier/candidate there is no FIFO cap evicting old entries out from under the mixed
+    // sample. Finite (not Infinity) because cfg round-trips through JSON.stringify (Export, Compare
+    // tab) which silently turns Infinity into null, and null as a maxSize defeats _evict()'s
+    // `length > maxSize` check the other way -- coerces to 0, so it would evict everything.
+    solvedBufSize: 1e9,
     // smaller per-step distance than the policy's, so a walk explores a tight neighbourhood
     // around its seed rather than crossing the maze in one tail
     walkNoise: { turnSigma: 0.55, speedSigma: 0.05, vMin: 0.06, vMax: 0.30, v0: 0.18, dt: 1 },
@@ -905,7 +927,15 @@ class Curriculum {
     this.numAnchors = grid.anchors.length;
     this.rng = mulberry32(cfg.seed >>> 0);
     this.distCache = makeDistCache(grid);
-    this.comp = new CompetenceField(grid);
+    // Each tree keeps its OWN competence field. They used to share one, which meant backward's
+    // reinforcement (warming cells near the goal) silently completed forward's trips the instant the
+    // two warm regions met -- so a forward rollout could certify start->goal without forward's own
+    // frontier ever reaching the goal region, and symmetrically for backward. Separate fields force
+    // each tree to genuinely earn its own end; the ONLY cross-tree coupling left is the explicit,
+    // slider-controlled crossBoost (default 0), which rides the OTHER tree's proven COVERAGE, not its
+    // competence -- opt-in "skill transfer" rather than a hidden always-on shortcut.
+    this.compFwd = new CompetenceField(grid);
+    this.compBwd = new CompetenceField(grid);
     this.iterations = 0;
     this._totalFree = countFreeCells(grid);
     this.coverageHistory = [];
@@ -919,14 +949,14 @@ class Curriculum {
     this.startFrontierEver = Array.from({ length: this.numAnchors }, () => new Uint8Array(n));
 
     this.goalFrontier = newGoalBufferSized(cfg, cfg.frontierBufSize);
-    this.goalSolved = newGoalBufferSized(cfg, cfg.frontierBufSize);
+    this.goalSolved = newGoalBufferSized(cfg, cfg.solvedBufSize);
     this.mixedGoal = newGoalBufferSized(cfg, cfg.mixedBufSize);
     this.goalCandidate = newGoalBufferSized(cfg, cfg.candidateBufSize);
 
     this.startFrontier = []; this.startSolved = []; this.mixedStart = []; this.startCandidate = [];
     for (let k = 0; k < this.numAnchors; k++) {
       this.startFrontier.push(newStartBufferSized(cfg, cfg.frontierBufSize));
-      this.startSolved.push(newStartBufferSized(cfg, cfg.frontierBufSize));
+      this.startSolved.push(newStartBufferSized(cfg, cfg.solvedBufSize));
       this.mixedStart.push(newStartBufferSized(cfg, cfg.mixedBufSize));
       this.startCandidate.push(newStartBufferSized(cfg, cfg.candidateBufSize));
       const a = this.grid.anchors[k];
@@ -1201,7 +1231,10 @@ function* iterationGenerator(cur) {
   for (const a of assignments) {
     const isFwdRole = a.branch === "anchor" || a.branch === "fwd_explore" || a.branch === "fwd_exploit";
     const boost = isFwdRole ? bwdUnion : cur.goalCoverEver;
-    const result = policyRollout(grid, cur.distCache, applyInitSubspaceMask(a.spawnState, cfg), a.goal, cur.comp, cfg, rng, boost);
+    // The anchor branch is a physical start->goal traversal, so it reads/writes the FORWARD field;
+    // its dual role in the band split (below) is a separate matter of what its outcome certifies.
+    const comp = isFwdRole ? cur.compFwd : cur.compBwd;
+    const result = policyRollout(grid, cur.distCache, applyInitSubspaceMask(a.spawnState, cfg), a.goal, comp, cfg, rng, boost);
     a.result = result;
     const solved = result.reward > cfg.rMax;
     // Raw endpoint before any completion, needed below to start the geodesic completion from where
@@ -1240,9 +1273,10 @@ function* iterationGenerator(cur) {
       const goalCellIdx = cellIdxOf(grid, a.goal[0], a.goal[1]);
       if (reward > cfg.rMax) {
         cur.goalSolved.addNovel([pair], epsSkill);
+        cur.goalFrontier.removeSimilar(pair, epsSkill);
         cur.goalCoverEver[goalCellIdx] = 1;
         frame.bandSplit.fwdSolved++;
-      } else if (reward >= cfg.rMin) {
+      } else if (reward > cfg.rMin) {
         cur.goalFrontier.addNovel([pair], epsSkill);
         cur.goalFrontierEver[goalCellIdx] = 1;
         frame.bandSplit.fwdFrontier++;
@@ -1254,9 +1288,10 @@ function* iterationGenerator(cur) {
       const startCellIdx = cellIdxOf(grid, a.result.achievedStart.x, a.result.achievedStart.y);
       if (reward > cfg.rMax) {
         cur.startSolved[k].addNovel([pair], epsSkill);
+        cur.startFrontier[k].removeSimilar(pair, epsSkill);
         cur.startCoverEver[k][startCellIdx] = 1;
         frame.bandSplit.bwdSolved++;
-      } else if (reward >= cfg.rMin) {
+      } else if (reward > cfg.rMin) {
         cur.startFrontier[k].addNovel([pair], epsSkill);
         cur.startFrontierEver[k][startCellIdx] = 1;
         frame.bandSplit.bwdFrontier++;
@@ -1264,7 +1299,11 @@ function* iterationGenerator(cur) {
     }
   }
   for (const a of assignments) {
-    for (const idx of a.result.visitedCellIndices) cur.comp.reinforce(idx, grid, cfg.competenceLR, cfg.spillover);
+    // Reinforce the SAME field this rollout ran on (forward roles -> compFwd, backward -> compBwd),
+    // so a tree's competence only ever grows from its own episodes.
+    const isFwdRole = a.branch === "anchor" || a.branch === "fwd_explore" || a.branch === "fwd_exploit";
+    const comp = isFwdRole ? cur.compFwd : cur.compBwd;
+    for (const idx of a.result.visitedCellIndices) comp.reinforce(idx, grid, cfg.competenceLR, cfg.spillover);
   }
   cur.iterations++;
   if (cur.iterations % cfg.updateInterval === 0) { cur.rebuildMixedGoal(); cur.rebuildAllMixedStart(); }
@@ -1370,6 +1409,18 @@ function badge(ctx, px, py, r, fill, letter, textColor, ringColor) {
   }
   ctx.restore();
 }
+/* Point-up for solved, point-down for frontier -- shared by the buffer markers and their legend
+   swatch so the two shapes cannot drift apart. Caller owns fillStyle/globalAlpha and the fill() call. */
+function triMarker(ctx, px, py, r, up) {
+  ctx.beginPath();
+  const base = up ? -Math.PI / 2 : Math.PI / 2;
+  for (let i = 0; i < 3; i++) {
+    const angle = base + i * (2 * Math.PI / 3);
+    const x = px + r * Math.cos(angle), y = py + r * Math.sin(angle);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
 function drawStartAndGoals(ctx, grid, achievedFlags, t, colors) {
   const [ix, iy] = toPx(t, grid.init.x, grid.init.y);
   badge(ctx, ix, iy, t.cell * 0.26, colors.start, "S", colors.bgRaised, null);
@@ -1391,31 +1442,42 @@ function sampleEvenly(arr, maxN) {
   for (let i = 0; i < maxN; i++) out.push(arr[Math.floor(i * step)]);
   return out;
 }
-/* Draws ONLY the mixed buffers -- the exact set the voronoi/connect search selects over. The
-   candidate and frontier buffers are upstream of that selection and drawing them just crowded the
-   canvas with points no walk could actually be seeded from this iteration.
+/* Two different sources on purpose, because the two marker kinds mean different things:
 
-   Each dot is shaded solved/frontier the same way coverage cells are. Buffer rebuilds never clone
-   rows (add/addNovel push the exact array reference they're given), so a mixedGoal entry sourced
-   from goalSolved IS that same array object -- reference identity in a Set is enough to recover
-   which source buffer it came from, with no extra bookkeeping on the pairs themselves. */
+   Solved (point-up) markers come STRAIGHT from the persistent goalSolved / startSolved buffers, so
+   every state ever proven stays on screen for good -- these accumulate and never flicker. Drawing
+   them from the mixed buffer instead (as this used to) made them churn: rebuildMixedGoal resamples a
+   random goalReplayRatio*mixedBufSize slice of goalSolved every iteration, so once more solved states
+   exist than that quota, which ones appeared changed each rebuild and proven states seemed to vanish.
+
+   Frontier (point-down) markers come from the mixed buffer -- the exact transient set the voronoi/
+   connect search selects over this iteration -- with anything already solved filtered out (reference
+   identity is enough: buffer rebuilds never clone rows, so a mixed entry sourced from goalSolved IS
+   that same array object). Frontier is meant to churn as exploration moves, so leaving it on the
+   per-iteration selection set is correct; only solved needed to be made persistent. */
 function drawBufferMarkers(ctx, cur, t, colors) {
-  const dot = (px, py, color, alpha, r) => {
+  const dot = (px, py, color, alpha, r, up) => {
     ctx.globalAlpha = alpha; ctx.fillStyle = color;
-    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    triMarker(ctx, px, py, r, up); ctx.fill(); ctx.globalAlpha = 1;
   };
   const goalSolvedSet = new Set(cur.goalSolved.items);
-  sampleEvenly(cur.mixedGoal.items, 80).forEach((p) => {
+  cur.goalSolved.items.forEach((p) => {
     const [px, py] = toPx(t, p[0], p[1]);
-    const solved = goalSolvedSet.has(p);
-    dot(px, py, colors.goalGeneric, solved ? DOT_ALPHA.solved : DOT_ALPHA.frontier, solved ? 6.0 : 6.0);
+    dot(px, py, colors.goalGeneric, DOT_ALPHA.solved, 4.0, true);
+  });
+  sampleEvenly(cur.mixedGoal.items.filter((p) => !goalSolvedSet.has(p)), 80).forEach((p) => {
+    const [px, py] = toPx(t, p[0], p[1]);
+    dot(px, py, colors.goalGeneric, DOT_ALPHA.frontier, 4.0, false);
   });
   cur.mixedStart.forEach((buf, k) => {
     const startSolvedSet = new Set(cur.startSolved[k].items);
-    sampleEvenly(buf.items, 80).forEach((p) => {
+    cur.startSolved[k].items.forEach((p) => {
       const [px, py] = toPx(t, p[2], p[3]);
-      const solved = startSolvedSet.has(p);
-      dot(px, py, startColor(colors, k), solved ? DOT_ALPHA.solved : DOT_ALPHA.frontier, solved ? 6.0 : 6.0);
+      dot(px, py, startColor(colors, k), DOT_ALPHA.solved, 4.0, true);
+    });
+    sampleEvenly(buf.items.filter((p) => !startSolvedSet.has(p)), 80).forEach((p) => {
+      const [px, py] = toPx(t, p[2], p[3]);
+      dot(px, py, startColor(colors, k), DOT_ALPHA.frontier, 4.0, false);
     });
   });
 }
@@ -1456,7 +1518,7 @@ function drawSolidPath(ctx, pts, color, alpha, width, arrowSpacing) {
 function drawWalkPath(ctx, pts, color, alpha) {
   if (pts.length < 2) return;
   ctx.save();
-  ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = 1.4;
+  ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = 3.0;
   ctx.setLineDash([2, 3]); ctx.lineCap = "butt";
   ctx.beginPath();
   pts.forEach((p, i) => { i === 0 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1]); });
@@ -1481,9 +1543,9 @@ function drawFrame(ctx, cur, frame, t, colors) {
   // big orange goal -- and symmetrically for the orange expansion reaching back toward blue.
   const treeColor = (dir, anchorIdx) => (dir === "fwd" ? colors.start : goalColor(colors, anchorIdx || 0));
   // walks (background layer)
-  if (frame.phase >= 2) {
+  if (frame.phase >= 2 && frame.phase < 4) {
     for (const w of frame.walks) {
-      drawWalkPath(ctx, w.path.map((p) => toPx(t, p.x, p.y)), treeColor(w.dir, w.anchorIdx), 0.5);
+      drawWalkPath(ctx, w.path.map((p) => toPx(t, p.x, p.y)), treeColor(w.dir, w.anchorIdx), 1.0);
     }
   }
   // walk-seed attractors: BOTH modes are drawn, so the selection rule is visible rather than implied.
@@ -1491,7 +1553,7 @@ function drawFrame(ctx, cur, frame, t, colors) {
   // diamond = connect, the opposite tree's band-verified point
   // The thin line runs attractor -> the buffer entry nearest it, which is the seed the walk started
   // from. With selectKnn = 1 that is exactly the Voronoi rule.
-  if (frame.phase >= 1) {
+  if (frame.phase === 1) {
     for (const s of frame.walkSeeds) {
       if (!s.attractorXY) continue;                      // bootstrap seeds have no attractor
       const isConnect = s.mode === "connect";
@@ -1527,7 +1589,7 @@ function drawFrame(ctx, cur, frame, t, colors) {
     }
   }
   // rollouts (foreground layer)
-  if (frame.phase >= 4) {
+  if (frame.phase === 4) {
     for (const r of frame.rollouts) {
       // green === BAND-SOLVED (reward > r_max), which is exactly the condition that writes the pair
       // into *_solved and shades the coverage cell. Keying the colour off anything else (e.g. "the
@@ -1537,6 +1599,17 @@ function drawFrame(ctx, cur, frame, t, colors) {
       const pts = r.path.map((p) => toPx(t, p.x, p.y));
       if (pts.length < 2) continue;
       drawSolidPath(ctx, pts, color, r.solved ? 1 : 0.8, r.reachedRealGoal ? 3.2 : r.solved ? 2.6 : 2.1, 26);
+    }
+  }
+  if (frame.phase >= 4) {
+    for (const r of frame.rollouts) {
+      // green === BAND-SOLVED (reward > r_max), which is exactly the condition that writes the pair
+      // into *_solved and shades the coverage cell. Keying the colour off anything else (e.g. "the
+      // agent physically entered the goal cell") makes the green markers and the shaded cells
+      // disagree, since a rollout can finish just short of a distant goal and still clear r_max.
+      const color = r.solved ? colors.success : treeColor(r.isFwdRole ? "fwd" : "bwd", r.anchorIdx);
+      const pts = r.path.map((p) => toPx(t, p.x, p.y));
+      if (pts.length < 2) continue;
       // Only the endpoint this rollout is actually *about*: a forward episode is defined by the
       // intermediate GOAL it was sent to (its start is always the start region); a backward episode
       // is defined by the intermediate START it was spawned at (its goal is always a real goal).
@@ -1659,10 +1732,10 @@ function legendSwatch(kind, color, colors) {
     ctx.beginPath(); ctx.moveTo(9, 7); ctx.lineTo(29, 7); ctx.stroke();
     ctx.setLineDash([]); ctx.globalAlpha = 0.95; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(5, 7, 4.2, 0, Math.PI * 2); ctx.stroke();
-  } else if (kind === "dotSplit") {
+  } else if (kind === "triSplit") {
     ctx.fillStyle = color;
-    ctx.globalAlpha = DOT_ALPHA.solved; ctx.beginPath(); ctx.arc(10, 7, 2.3, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = DOT_ALPHA.frontier; ctx.beginPath(); ctx.arc(20, 7, 2.8, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = DOT_ALPHA.solved; triMarker(ctx, 10, 7, 4.0, true); ctx.fill();
+    ctx.globalAlpha = DOT_ALPHA.frontier; triMarker(ctx, 20, 7, 4.0, false); ctx.fill();
   } else if (kind === "badgeSm") badge(ctx, 15, 7, 4.6, color, "S", colors.bgRaised, null);
   else if (kind === "badgeGm") badge(ctx, 15, 7, 4.6, color, "G", colors.bgRaised, null);
   return c;
@@ -1688,19 +1761,19 @@ function buildLegend(container, cur) {
         cur.numAnchors > 1 ? "starts that reach goal " + (k + 1) : "starts that reach the goal",
       ]),
       ["cellSplit", colors.success, "overlap of the above"],
-      [null, null, "darker half = solved (reward > r_max) · brighter half = frontier (in band, not yet solved)"],
+      [null, null, "darker half = solved (within correct cell) · brighter half = frontier (in adjacent cells)"],
     ]],
     ["forward tree — grows out of the start", [
       ["rollout", colors.start, "rollout"],
       ["walk", colors.start, "random walk"],
       ["badgeGm", colors.goalGeneric, "intermediate goal it aims at"],
-      ["dotSplit", colors.goalGeneric, "buffered goals — darker solved, brighter frontier"],
+      ["triSplit", colors.goalGeneric, "buffered goals — ▲ solved, ▼ frontier"],
     ]],
     ["backward tree — grows out of the goal", [
       ["rollout", g1, "rollout"],
       ["walk", g1, "random walk"],
       ["badgeSm", colors.start, "intermediate start it spawns at"],
-      ["dotSplit", colors.start, "buffered starts — darker solved, brighter frontier"],
+      ["triSplit", colors.start, "buffered starts — ▲ solved, ▼ frontier"],
     ]],
     ["events", [
       ["rolloutWin", colors.success, "solved (reward > r_max)"],
