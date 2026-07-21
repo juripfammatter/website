@@ -94,6 +94,7 @@
     color: var(--ink-faint); margin-bottom: 2px;
   }
   .legend .item { display:flex; align-items:flex-start; gap:8px; line-height: 1.35; }
+  .legend .item-note { color: var(--ink-faint); font-size: 10.5px; font-style: italic; }
   .legend .item > span:last-child { min-width: 0; }
   .legend canvas { display:block; flex:none; margin-top: 1px; }
   .legend-panel { margin-top: 12px; }
@@ -336,7 +337,7 @@
           <div class="body">
             <div class="field"><label>rollout envs</label><span class="val" id="v_numTrainEnvs"></span><input type="range" id="numTrainEnvs" min="4" max="48" step="2"></div>
             <div class="field"><label>random-walk envs</label><span class="val" id="v_numWalkEnvs"></span><input type="range" id="numWalkEnvs" min="4" max="48" step="2"></div>
-            <div class="field"><label>random walk length</label><span class="val" id="v_walkHorizon"></span><input type="range" id="walkHorizon" min="5" max="60" step="1"></div>
+            <div class="field"><label>random walk length</label><span class="val" id="v_walkHorizon"></span><input type="range" id="walkHorizon" min="5" max="40" step="1"></div>
             <div class="field"><label>episode horizon <span class="sub">longer trips time out</span></label><span class="val" id="v_maxSteps"></span><input type="range" id="maxSteps" min="20" max="200" step="5"></div>
           </div>
         </details>
@@ -377,8 +378,11 @@
         <span class="spacer"></span>
         <label>fwd connect <b class="mono" id="cmpVGoalConnect">0.50</b> <input type="range" id="cmpGoalConnect" min="0" max="1" step="0.01" value="0.5" style="width:80px;vertical-align:middle"></label>
         <label>bwd connect <b class="mono" id="cmpVSkillConnect">0.50</b> <input type="range" id="cmpSkillConnect" min="0" max="1" step="0.01" value="0.5" style="width:80px;vertical-align:middle"></label>
+        <span class="spacer"></span>
+        <label>seeds averaged <b class="mono" id="cmpVSeeds">5</b> <input type="range" id="cmpSeedsRange" min="1" max="12" step="1" value="5" style="width:80px;vertical-align:middle"></label>
       </div>
       <div class="stat" style="margin: 2px 0 0">connect ratios apply to the bidirectional pane; the single-direction panes force them to 0 (no opposite tree). Maze &amp; env settings mirror the Explain tab — edit there, then return.</div>
+      <div class="stat" id="cmpMeanStatus" style="margin: 2px 0 0"></div>
       <div class="compare-grid" style="margin-top:14px">
         <div class="compare-cell">
           <h3>Forward-only</h3>
@@ -400,12 +404,12 @@
         </div>
       </div>
       <div class="chart-wrap">
-        <h2>goals reached vs. iteration</h2>
+        <h2>goals reached vs. iteration — mean over seeds</h2>
         <canvas id="chartCanvas" width="1200" height="220"></canvas>
         <div class="chart-legend" id="goalsChartLegend"></div>
       </div>
       <div class="chart-wrap">
-        <h2>covered region vs. iteration — fraction of free cells proven</h2>
+        <h2>covered region vs. iteration — fraction of free cells proven, mean over seeds</h2>
         <canvas id="coverageChartCanvas" width="1200" height="220"></canvas>
         <div class="chart-legend" id="coverageChartLegend"></div>
       </div>
@@ -452,7 +456,7 @@
   </div>
 </main>
 
-<div class="footer-credit">Bidirectional Reachability Expansion Curriculum · 2D explainer · informed-exploration/docs/design/gccure_demo · pairs with gccure_pseudocode.md</div>
+<div class="footer-credit">Bidirectional Reachability Expansion Curriculum · 2D explainer</div>
 
 <script>
 "use strict";
@@ -518,7 +522,7 @@ const MAZES = {
     i === 0 || i === 10 ? "W".repeat(11) : "W" + "o".repeat(9) + "W"
   ),
   medium: [
-    "WWWWWWWWWWWW", "WooWoooWoooW", "WWoWoWoWoWWW", "WooWoWoooooW", "WoWWWWoWWWoW",
+    "WWWWWWWWWWWW", "WooWoooWooIW", "WWoWoWoWoWWW", "WooWGWoooooW", "WoWWWWoWWWoW",
     "WooooooWoooW", "WoWWoWoWoWoW", "WooooWoooooW", "WWWWWWWWWWWW",
   ],
   g: ["WWWWWWW", "WooooGW", "WoWWWWW", "WoWIooW", "WoWWWoW", "WoooooW", "WWWWWWW"],
@@ -810,25 +814,25 @@ const SHIPPED_DEFAULT = null;
 
 function defaultCfg() {
   return {
-    anchorRatio: 0.05, fwdExploreRatio: 0.325, fwdExploitRatio: 0.15, bwdExploreRatio: 0.325, bwdExploitRatio: 0.15,
+    anchorRatio: 0.0, fwdExploreRatio: 0.35, fwdExploitRatio: 0.15, bwdExploreRatio: 0.35, bwdExploitRatio: 0.15,
     goalConnectRatio: 0.5, skillConnectRatio: 0.5,
     // cross-tree hand-off boost: how far a cell the OPPOSITE tree has proven is nudged toward full
     // competence when this tree rolls through it (0 = off, the shipped algorithm has no such term)
-    crossBoost: 0.5,
+    crossBoost: 0.75,
     numTrainEnvs: 16, numWalkEnvs: 16,
-    walkHorizonForward: 24, walkHorizonBackward: 24,
+    walkHorizonForward: 10, walkHorizonBackward: 10,
     // caps one rollout's step budget, so a journey longer than this times out with partial credit
     // (frontier band) even when every cell on the way is fully practised
     maxSteps: 90,
     // fixed competence model (no longer slider-exposed)
-    competenceLR: 0.24, alpha: 1.1, spillover: 0.26,
+    competenceLR: 0.24, alpha: 1.1, spillover: 0.01,
     // fixed algorithm knobs.
     // selectKnn=1 makes voronoi selection EXACT nearest-neighbour, i.e. textbook Voronoi-cell-
     // proportional sampling: a buffer entry is picked with probability equal to the share of free
     // space closer to it than to any other entry. The real presets use 4, which softens the bias
     // for diversity -- at this demo's buffer sizes that softening is indistinguishable from uniform
     // selection, which hides the mechanism entirely. See the notes tab.
-    selectKnn: 1, rMin: 0.35, rMax: 0.75, frontierEps: 0.05, candidateEps: 0.12,
+    selectKnn: 1, rMin: 0.15, rMax: 0.75, frontierEps: 0.05, candidateEps: 0.12,
     // goalReplayRatio back to the shipped preset's 0.4. At 0.0 the mixed buffer was frontier-ONLY,
     // and since goal_frontier grows far more slowly than goal_solved (only rollouts landing inside
     // the r_min..r_max band qualify), the walk-seeding pool collapsed to ~3 entries — so voronoi
@@ -843,7 +847,7 @@ function defaultCfg() {
     // Rebuild every iteration rather than every 5. The real system's interval is in environment
     // steps with thousands of envs filling the buffers, so staleness is invisible there; at this
     // demo's scale a 5-iteration freeze pins the seed pool to whatever it held 5 iterations ago.
-    updateInterval: 1, seed: 1234,
+    updateInterval: 1, seed: 42,
     defaultV: 0.55, turnRateMax: 0.9, dt: 1, thetaWeight: 0.6,
     frontierBufSize: 300, mixedBufSize: 200, candidateBufSize: 400,
     // smaller per-step distance than the policy's, so a walk explores a tight neighbourhood
@@ -882,8 +886,10 @@ class Curriculum {
     this.history = [];
 
     const n = grid.W * grid.H;
-    this.goalCoverEver = new Uint8Array(n);
+    this.goalCoverEver = new Uint8Array(n); // solved: reward > r_max
     this.startCoverEver = Array.from({ length: this.numAnchors }, () => new Uint8Array(n));
+    this.goalFrontierEver = new Uint8Array(n); // in-band: r_min <= reward <= r_max, not yet solved
+    this.startFrontierEver = Array.from({ length: this.numAnchors }, () => new Uint8Array(n));
 
     this.goalFrontier = newGoalBufferSized(cfg, cfg.frontierBufSize);
     this.goalSolved = newGoalBufferSized(cfg, cfg.frontierBufSize);
@@ -990,6 +996,8 @@ class Curriculum {
       iter: this.iterations,
       goalCoverEver: this.goalCoverEver.slice(),
       startCoverEver: this.startCoverEver.map((a) => a.slice()),
+      goalFrontierEver: this.goalFrontierEver.slice(),
+      startFrontierEver: this.startFrontierEver.map((a) => a.slice()),
       goalsReached: this.goalsReachedCount(),
     });
     if (this.history.length > HISTORY_CAP) this.history.shift();
@@ -1202,20 +1210,30 @@ function* iterationGenerator(cur) {
     const reward = a.result.reward;
     if (isFwd) {
       const pair = makePair(a.goal, a.pairState);
+      const goalCellIdx = cellIdxOf(grid, a.goal[0], a.goal[1]);
       if (reward > cfg.rMax) {
         cur.goalSolved.addNovel([pair], epsSkill);
-        cur.goalCoverEver[cellIdxOf(grid, a.goal[0], a.goal[1])] = 1;
+        cur.goalCoverEver[goalCellIdx] = 1;
         frame.bandSplit.fwdSolved++;
-      } else if (reward >= cfg.rMin) { cur.goalFrontier.addNovel([pair], epsSkill); frame.bandSplit.fwdFrontier++; }
+      } else if (reward >= cfg.rMin) {
+        cur.goalFrontier.addNovel([pair], epsSkill);
+        cur.goalFrontierEver[goalCellIdx] = 1;
+        frame.bandSplit.fwdFrontier++;
+      }
     }
     if (isBwd) {
       const pair = makePair(a.goal, a.result.achievedStart);
       const k = a.anchorIdx;
+      const startCellIdx = cellIdxOf(grid, a.result.achievedStart.x, a.result.achievedStart.y);
       if (reward > cfg.rMax) {
         cur.startSolved[k].addNovel([pair], epsSkill);
-        cur.startCoverEver[k][cellIdxOf(grid, a.result.achievedStart.x, a.result.achievedStart.y)] = 1;
+        cur.startCoverEver[k][startCellIdx] = 1;
         frame.bandSplit.bwdSolved++;
-      } else if (reward >= cfg.rMin) { cur.startFrontier[k].addNovel([pair], epsSkill); frame.bandSplit.bwdFrontier++; }
+      } else if (reward >= cfg.rMin) {
+        cur.startFrontier[k].addNovel([pair], epsSkill);
+        cur.startFrontierEver[k][startCellIdx] = 1;
+        frame.bandSplit.bwdFrontier++;
+      }
     }
   }
   for (const a of assignments) {
@@ -1235,6 +1253,14 @@ function stageTransform(canvas, grid) {
 }
 function toPx(t, x, y) { return [t.offX + x * t.cell, t.offY + y * t.cell]; }
 
+/* Two-tier "how proven is this?" opacity, shared by coverage cells, buffer dots, and their legend
+   swatches so the three stay visually consistent. SOLVED (reward > r_max) settles into the calmer,
+   darker shade; FRONTIER (in the r_min..r_max band, not yet solved) is the brighter, more eye-catching
+   one, since that's the active growing edge worth watching. Dots get a higher baseline than cells
+   because a 2px mark needs more opacity than a whole cell fill to read at all. */
+const SHADE_SOLVED = 0.35, SHADE_FRONTIER = 0.62;
+const DOT_ALPHA = { solved: 0.5, frontier: 0.85 };
+
 function drawFloorAndWalls(ctx, grid, t, colors) {
   ctx.fillStyle = colors.floor;
   ctx.fillRect(t.offX, t.offY, grid.W * t.cell, grid.H * t.cell);
@@ -1246,17 +1272,30 @@ function drawFloorAndWalls(ctx, grid, t, colors) {
     const [px, py] = toPx(t, x, y); ctx.fillRect(px, py, t.cell, t.cell);
   }
 }
-function drawCoverageArrays(ctx, grid, goalCov, startCovArr, t, colors) {
+function drawCoverageArrays(ctx, grid, goalSolved, goalFrontier, startSolvedArr, startFrontierArr, t, colors) {
   for (let y = 0; y < grid.H; y++) for (let x = 0; x < grid.W; x++) {
     const idx = y * grid.W + x;
     if (grid.walls[idx]) continue;
-    const g = goalCov[idx];
-    let sk = -1;
-    for (let k = 0; k < startCovArr.length; k++) if (startCovArr[k][idx]) { sk = k; break; }
-    if (!g && sk < 0) continue;
+    const gSolved = !!goalSolved[idx];
+    const gFrontier = !gSolved && !!goalFrontier[idx];
+    let sSolvedK = -1, sFrontierK = -1;
+    for (let k = 0; k < startSolvedArr.length; k++) if (startSolvedArr[k][idx]) { sSolvedK = k; break; }
+    if (sSolvedK < 0) for (let k = 0; k < startFrontierArr.length; k++) if (startFrontierArr[k][idx]) { sFrontierK = k; break; }
+    const gAny = gSolved || gFrontier, sAny = sSolvedK >= 0 || sFrontierK >= 0;
+    if (!gAny && !sAny) continue;
     const [px, py] = toPx(t, x, y);
-    ctx.globalAlpha = 0.5;
-    ctx.fillStyle = g && sk >= 0 ? colors.success : g ? colors.goalGeneric : startColor(colors, sk);
+    let fill, alpha;
+    if (gAny && sAny) {
+      const bothSolved = gSolved && sSolvedK >= 0;
+      fill = colors.success; alpha = bothSolved ? SHADE_SOLVED : SHADE_FRONTIER;
+    } else if (gAny) {
+      fill = colors.goalGeneric; alpha = gSolved ? SHADE_SOLVED : SHADE_FRONTIER;
+    } else {
+      fill = startColor(colors, sSolvedK >= 0 ? sSolvedK : sFrontierK);
+      alpha = sSolvedK >= 0 ? SHADE_SOLVED : SHADE_FRONTIER;
+    }
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = fill;
     ctx.fillRect(px + 1, py + 1, t.cell - 2, t.cell - 2);
     ctx.globalAlpha = 1;
   }
@@ -1297,15 +1336,30 @@ function sampleEvenly(arr, maxN) {
 }
 /* Draws ONLY the mixed buffers -- the exact set the voronoi/connect search selects over. The
    candidate and frontier buffers are upstream of that selection and drawing them just crowded the
-   canvas with points no walk could actually be seeded from this iteration. */
+   canvas with points no walk could actually be seeded from this iteration.
+
+   Each dot is shaded solved/frontier the same way coverage cells are. Buffer rebuilds never clone
+   rows (add/addNovel push the exact array reference they're given), so a mixedGoal entry sourced
+   from goalSolved IS that same array object -- reference identity in a Set is enough to recover
+   which source buffer it came from, with no extra bookkeeping on the pairs themselves. */
 function drawBufferMarkers(ctx, cur, t, colors) {
-  const dot = (px, py, color) => {
-    ctx.globalAlpha = 0.8; ctx.fillStyle = color;
-    ctx.beginPath(); ctx.arc(px, py, 2.7, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+  const dot = (px, py, color, alpha, r) => {
+    ctx.globalAlpha = alpha; ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
   };
-  sampleEvenly(cur.mixedGoal.items, 80).forEach((p) => { const [px, py] = toPx(t, p[0], p[1]); dot(px, py, colors.goalGeneric); });
+  const goalSolvedSet = new Set(cur.goalSolved.items);
+  sampleEvenly(cur.mixedGoal.items, 80).forEach((p) => {
+    const [px, py] = toPx(t, p[0], p[1]);
+    const solved = goalSolvedSet.has(p);
+    dot(px, py, colors.goalGeneric, solved ? DOT_ALPHA.solved : DOT_ALPHA.frontier, solved ? 2.3 : 2.8);
+  });
   cur.mixedStart.forEach((buf, k) => {
-    sampleEvenly(buf.items, 80).forEach((p) => { const [px, py] = toPx(t, p[2], p[3]); dot(px, py, startColor(colors, k)); });
+    const startSolvedSet = new Set(cur.startSolved[k].items);
+    sampleEvenly(buf.items, 80).forEach((p) => {
+      const [px, py] = toPx(t, p[2], p[3]);
+      const solved = startSolvedSet.has(p);
+      dot(px, py, startColor(colors, k), solved ? DOT_ALPHA.solved : DOT_ALPHA.frontier, solved ? 2.3 : 2.8);
+    });
   });
 }
 /* Solid stroke + periodic arrowheads: policy rollouts. */
@@ -1447,7 +1501,7 @@ function renderStage(canvas, cur, frame) {
   const t = stageTransform(canvas, cur.grid);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawFloorAndWalls(ctx, cur.grid, t, colors);
-  drawCoverageArrays(ctx, cur.grid, cur.goalCoverEver, cur.startCoverEver, t, colors);
+  drawCoverageArrays(ctx, cur.grid, cur.goalCoverEver, cur.goalFrontierEver, cur.startCoverEver, cur.startFrontierEver, t, colors);
   drawBufferMarkers(ctx, cur, t, colors);
   if (frame) drawFrame(ctx, cur, frame, t, colors);
   drawStartAndGoals(ctx, cur.grid, cur.goalAchievedFlags(), t, colors);
@@ -1460,7 +1514,7 @@ function renderStageSnapshot(canvas, grid, snap) {
   const flags = grid.anchors.map((a, k) => !!snap.goalCoverEver[cellIdxOf(grid, a.x, a.y)] || !!snap.startCoverEver[k][initIdx]);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawFloorAndWalls(ctx, grid, t, colors);
-  drawCoverageArrays(ctx, grid, snap.goalCoverEver, snap.startCoverEver, t, colors);
+  drawCoverageArrays(ctx, grid, snap.goalCoverEver, snap.goalFrontierEver, snap.startCoverEver, snap.startFrontierEver, t, colors);
   drawStartAndGoals(ctx, grid, flags, t, colors);
 }
 function renderMiniStage(canvas, cur) {
@@ -1469,7 +1523,7 @@ function renderMiniStage(canvas, cur) {
   const t = stageTransform(canvas, cur.grid);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawFloorAndWalls(ctx, cur.grid, t, colors);
-  drawCoverageArrays(ctx, cur.grid, cur.goalCoverEver, cur.startCoverEver, t, colors);
+  drawCoverageArrays(ctx, cur.grid, cur.goalCoverEver, cur.goalFrontierEver, cur.startCoverEver, cur.startFrontierEver, t, colors);
   drawStartAndGoals(ctx, cur.grid, cur.goalAchievedFlags(), t, colors);
 }
 
@@ -1523,8 +1577,11 @@ function legendSwatch(kind, color, colors) {
   const c = document.createElement("canvas");
   c.width = 30; c.height = 14;
   const ctx = c.getContext("2d");
-  if (kind === "cell") { ctx.globalAlpha = 0.5; ctx.fillStyle = color; ctx.fillRect(2, 1, 26, 12); }
-  else if (kind === "badgeS") badge(ctx, 15, 7, 6.5, color, "S", colors.bgRaised, null);
+  if (kind === "cellSplit") {
+    ctx.fillStyle = color;
+    ctx.globalAlpha = SHADE_SOLVED; ctx.fillRect(2, 1, 12, 12);
+    ctx.globalAlpha = SHADE_FRONTIER; ctx.fillRect(16, 1, 12, 12);
+  } else if (kind === "badgeS") badge(ctx, 15, 7, 6.5, color, "S", colors.bgRaised, null);
   else if (kind === "badgeG") badge(ctx, 15, 7, 6.5, color, "G", colors.bgRaised, null);
   else if (kind === "badgeGdone") {
     badge(ctx, 15, 7, 5.2, color, "G", colors.bgRaised, null);
@@ -1542,8 +1599,11 @@ function legendSwatch(kind, color, colors) {
     ctx.beginPath(); ctx.moveTo(9, 7); ctx.lineTo(29, 7); ctx.stroke();
     ctx.setLineDash([]); ctx.globalAlpha = 0.95; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(5, 7, 4.2, 0, Math.PI * 2); ctx.stroke();
-  } else if (kind === "dot") { ctx.fillStyle = color; ctx.globalAlpha = 0.75; ctx.beginPath(); ctx.arc(15, 7, 2.7, 0, Math.PI * 2); ctx.fill(); }
-  else if (kind === "badgeSm") badge(ctx, 15, 7, 4.6, color, "S", colors.bgRaised, null);
+  } else if (kind === "dotSplit") {
+    ctx.fillStyle = color;
+    ctx.globalAlpha = DOT_ALPHA.solved; ctx.beginPath(); ctx.arc(10, 7, 2.3, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = DOT_ALPHA.frontier; ctx.beginPath(); ctx.arc(20, 7, 2.8, 0, Math.PI * 2); ctx.fill();
+  } else if (kind === "badgeSm") badge(ctx, 15, 7, 4.6, color, "S", colors.bgRaised, null);
   else if (kind === "badgeGm") badge(ctx, 15, 7, 4.6, color, "G", colors.bgRaised, null);
   return c;
 }
@@ -1562,24 +1622,25 @@ function buildLegend(container, cur) {
       return rows;
     })()],
     ["proven coverage", [
-      ["cell", colors.goalGeneric, "goals reachable from the start"],
+      ["cellSplit", colors.goalGeneric, "goals reachable from the start"],
       ...Array.from({ length: cur.numAnchors }, (_, k) => [
-        "cell", startColor(colors, k),
+        "cellSplit", startColor(colors, k),
         cur.numAnchors > 1 ? "starts that reach goal " + (k + 1) : "starts that reach the goal",
       ]),
-      ["cell", colors.success, "overlap of the above"],
+      ["cellSplit", colors.success, "overlap of the above"],
+      [null, null, "darker half = solved (reward > r_max) · brighter half = frontier (in band, not yet solved)"],
     ]],
     ["forward tree — grows out of the start", [
       ["rollout", colors.start, "rollout"],
       ["walk", colors.start, "random walk"],
       ["badgeGm", colors.goalGeneric, "intermediate goal it aims at"],
-      ["dot", colors.goalGeneric, "solved intermediate goals"],
+      ["dotSplit", colors.goalGeneric, "buffered goals — darker solved, brighter frontier"],
     ]],
     ["backward tree — grows out of the goal", [
       ["rollout", g1, "rollout"],
       ["walk", g1, "random walk"],
       ["badgeSm", colors.start, "intermediate start it spawns at"],
-      ["dot", colors.start, "solved intermediate starts"],
+      ["dotSplit", colors.start, "buffered starts — darker solved, brighter frontier"],
     ]],
     ["events", [
       ["rolloutWin", colors.success, "solved (reward > r_max)"],
@@ -1598,8 +1659,8 @@ function buildLegend(container, cur) {
     grp.appendChild(h);
     for (const [kind, color, label] of rows) {
       const el = document.createElement("span");
-      el.className = "item";
-      el.appendChild(legendSwatch(kind, color, colors));
+      el.className = "item" + (kind ? "" : " item-note");
+      if (kind) el.appendChild(legendSwatch(kind, color, colors));
       const txt = document.createElement("span");
       txt.textContent = label;
       el.appendChild(txt);
@@ -1931,9 +1992,94 @@ function setModePreset(name) {
 
 /* ============================== 13. Compare-tab controller ============================== */
 function cloneGrid(g) { return { W: g.W, H: g.H, walls: new Uint8Array(g.walls), init: { ...g.init }, anchors: g.anchors.map((a) => ({ ...a })) }; }
-const Cmp = { grid: null, curs: {}, gens: {}, running: false, timerId: null, doneIter: {}, goalConnect: 0.5, skillConnect: 0.5 };
+const Cmp = {
+  grid: null, curs: {}, gens: {}, running: false, timerId: null, doneIter: {}, goalConnect: 0.5, skillConnect: 0.5,
+  seeds: 5, meanGen: 0, seedHistories: { fwd: [], bwd: [], bidir: [] }, meanStats: { fwd: null, bwd: null, bidir: null },
+};
 const CMP_MODES = ["fwd", "bwd", "bidir"];
 const CMP_SUF = { fwd: "Fwd", bwd: "Bwd", bidir: "Bidir" };
+const CMP_SEED_OFFSETS = { fwd: 1, bwd: 2, bidir: 3 };
+// Safety bound for the background sweep: a hand-edited maze can disconnect the goal from the start
+// entirely, in which case a seed would never satisfy goalsReachedCount >= numAnchors. Converged runs
+// finish in well under 200 iterations at the shipped defaults, so this only ever bites degenerate mazes.
+const CMP_ITER_CAP = 400;
+function cmpSeedCfg(baseCfg, mode, seedIdx) {
+  const cfg = Object.assign({}, baseCfg, MODE_PRESETS[mode], {
+    seed: (baseCfg.seed * 10000 + CMP_SEED_OFFSETS[mode] * 1000 + seedIdx) >>> 0,
+  });
+  // Only the bidirectional pane can use connect (the single-direction panes have no opposite tree,
+  // so MODE_PRESETS already forces their ratios to 0 and we leave those untouched).
+  if (mode === "bidir") { cfg.goalConnectRatio = Cmp.goalConnect; cfg.skillConnectRatio = Cmp.skillConnect; }
+  return cfg;
+}
+/* Runs one seed to completion (or the safety cap) with no yielding — used off the animation loop, so
+   it is fine for this to be a synchronous busy loop. Draining a fresh generator to `done` executes
+   exactly one iteration (iterationGenerator yields once per phase, then returns). */
+function cmpRunSeedToEnd(cfg, grid, mode) {
+  const cur = new Curriculum(cfg, grid, mode);
+  while (cur.iterations < CMP_ITER_CAP && cur.goalsReachedCount() < cur.numAnchors) {
+    const gen = iterationGenerator(cur);
+    let res = gen.next();
+    while (!res.done) res = gen.next();
+  }
+  return { goalsHistory: cur.goalsHistory, coverageHistory: cur.coverageHistory };
+}
+/* Forward-fill: a seed that finished early (or hit the cap) has no further history entries, so its
+   last recorded value stands in for every later iteration when it's averaged against seeds still running. */
+function cmpPadded(history, iter, key) { return history[Math.min(iter, history.length) - 1][key]; }
+function cmpComputeMean(mode) {
+  const seedHists = Cmp.seedHistories[mode];
+  if (!seedHists.length) return null;
+  let maxIter = 0;
+  for (const h of seedHists) maxIter = Math.max(maxIter, h.goalsHistory.length);
+  const n = seedHists.length;
+  const goalsHistory = [], coverageHistory = [];
+  for (let iter = 1; iter <= maxIter; iter++) {
+    let g = 0, gf = 0, sf = 0;
+    for (const h of seedHists) {
+      g += cmpPadded(h.goalsHistory, iter, "rate");
+      gf += cmpPadded(h.coverageHistory, iter, "goalFrac");
+      sf += cmpPadded(h.coverageHistory, iter, "startFrac");
+    }
+    goalsHistory.push({ iter, rate: g / n });
+    coverageHistory.push({ iter, goalFrac: gf / n, startFrac: sf / n });
+  }
+  return { goalsHistory, coverageHistory };
+}
+/* Drives the N-seeds-per-mode background sweep that feeds the two charts, decoupled from the single
+   animated seed shown in the three mini-stages above. One seed's full run happens synchronously (cheap
+   at this demo's env/grid scale), but the sweep yields to the event loop between seeds via setTimeout(0)
+   so the page stays responsive and the charts fill in progressively. `meanGen` is a generation token: a
+   mid-sweep change to the seed count, connect ratios, or maze bumps it, and the stale closure below
+   notices on its next tick and quietly stops instead of clobbering the newer sweep's results. */
+function cmpRebuildMeans() {
+  const myGen = ++Cmp.meanGen;
+  Cmp.seedHistories = { fwd: [], bwd: [], bidir: [] };
+  Cmp.meanStats = { fwd: null, bwd: null, bidir: null };
+  const baseCfg = JSON.parse(JSON.stringify(App.cfg));
+  const grid = Cmp.grid;
+  const jobs = [];
+  for (const mode of CMP_MODES) for (let i = 0; i < Cmp.seeds; i++) jobs.push({ mode, seedIdx: i });
+  const statusEl = document.getElementById("cmpMeanStatus");
+  let ji = 0;
+  function step() {
+    if (myGen !== Cmp.meanGen) return;
+    if (ji >= jobs.length) {
+      statusEl.textContent = Cmp.seeds + (Cmp.seeds === 1 ? " seed" : " seeds") + " averaged into the charts below.";
+      return;
+    }
+    const { mode, seedIdx } = jobs[ji];
+    const cfg = cmpSeedCfg(baseCfg, mode, seedIdx);
+    Cmp.seedHistories[mode].push(cmpRunSeedToEnd(cfg, grid, mode));
+    Cmp.meanStats[mode] = cmpComputeMean(mode);
+    ji++;
+    statusEl.textContent = "computing seeds… " + ji + " / " + jobs.length;
+    redrawCompareCharts();
+    setTimeout(step, 0);
+  }
+  statusEl.textContent = "computing seeds… 0 / " + jobs.length;
+  step();
+}
 
 function cmpModeColor(colors, mode) {
   return mode === "fwd" ? colors.goalGeneric : mode === "bwd" ? colors.start : colors.success;
@@ -1956,19 +2102,18 @@ function cmpReset() {
   Cmp.grid = cloneGrid(App.grid);
   Cmp.sig = compareSignature();
   const baseCfg = JSON.parse(JSON.stringify(App.cfg));
-  const seedOffsets = { fwd: 1, bwd: 2, bidir: 3 };
   Cmp.curs = {}; Cmp.gens = {}; Cmp.doneIter = {};
   for (const mode of CMP_MODES) {
-    const cfg = Object.assign({}, baseCfg, MODE_PRESETS[mode], { seed: (baseCfg.seed * 1000 + seedOffsets[mode]) >>> 0 });
-    // Only the bidirectional pane can use connect (the single-direction panes have no opposite tree,
-    // so MODE_PRESETS already forces their ratios to 0 and we leave those untouched).
-    if (mode === "bidir") { cfg.goalConnectRatio = Cmp.goalConnect; cfg.skillConnectRatio = Cmp.skillConnect; }
+    // Seed index 0 of the background sweep below, so the animated pane is literally one of the
+    // seeds the mean is averaged over rather than a disjoint fourth sample.
+    const cfg = cmpSeedCfg(baseCfg, mode, 0);
     Cmp.curs[mode] = new Curriculum(cfg, Cmp.grid, mode);
     Cmp.gens[mode] = iterationGenerator(Cmp.curs[mode]);
     Cmp.doneIter[mode] = null;
   }
   CMP_MODES.forEach((m) => document.getElementById("cmpBanner" + CMP_SUF[m]).classList.remove("show"));
   redrawCompare();
+  cmpRebuildMeans();
 }
 function cmpDrainOne(mode) {
   let res = Cmp.gens[mode].next();
@@ -2010,26 +2155,33 @@ function stopCmp() {
   if (rb) rb.disabled = false;
   if (sb) sb.disabled = true;
 }
+/* Redraws only the three animated mini-stages + their stat rows. Cheap, so this runs every tick of
+   the single live seed's race. The two charts below are driven separately by the background N-seed
+   sweep (see redrawCompareCharts) since their data doesn't change between sweep updates. */
 function redrawCompare() {
   if (!Cmp.curs.fwd) return;
-  const colors = pal();
   for (const mode of CMP_MODES) {
     const cur = Cmp.curs[mode], suf = CMP_SUF[mode];
     renderMiniStage(document.getElementById("cmpCanvas" + suf), cur);
     document.getElementById("cmpIter" + suf).textContent = cur.iterations;
     document.getElementById("cmpGoals" + suf).textContent = cur.goalsReachedCount() + " / " + cur.numAnchors;
   }
+}
+function redrawCompareCharts() {
+  if (!Cmp.curs.fwd) return;
+  const colors = pal();
   const K = Cmp.curs.fwd.numAnchors;
+  const haveModes = CMP_MODES.filter((m) => Cmp.meanStats[m]);
   renderChart(document.getElementById("chartCanvas"),
-    CMP_MODES.map((m) => ({ color: cmpModeColor(colors, m), data: Cmp.curs[m].goalsHistory })),
+    haveModes.map((m) => ({ color: cmpModeColor(colors, m), data: Cmp.meanStats[m].goalsHistory })),
     { yMax: Math.max(1, K), intTicks: true, step: true });
   // Only the series each mode can actually produce: a forward-only run never grows start coverage,
   // a backward-only run never grows goal coverage.
   const covSeries = [];
-  for (const m of CMP_MODES) {
-    const cur = Cmp.curs[m], color = cmpModeColor(colors, m);
-    if (m !== "bwd") covSeries.push({ color, data: cur.coverageHistory.map((p) => ({ iter: p.iter, rate: p.goalFrac })) });
-    if (m !== "fwd") covSeries.push({ color, dash: [5, 3], data: cur.coverageHistory.map((p) => ({ iter: p.iter, rate: p.startFrac })) });
+  for (const m of haveModes) {
+    const color = cmpModeColor(colors, m), stats = Cmp.meanStats[m];
+    if (m !== "bwd") covSeries.push({ color, data: stats.coverageHistory.map((p) => ({ iter: p.iter, rate: p.goalFrac })) });
+    if (m !== "fwd") covSeries.push({ color, dash: [5, 3], data: stats.coverageHistory.map((p) => ({ iter: p.iter, rate: p.startFrac })) });
   }
   renderChart(document.getElementById("coverageChartCanvas"), covSeries, { yMax: 1 });
   buildChartLegends(colors);
@@ -2068,7 +2220,7 @@ function wireTabs() {
       document.getElementById("view-" + btn.dataset.view).classList.add("active");
       if (btn.dataset.view === "compare") {
         if (!Cmp.curs.fwd || Cmp.sig !== compareSignature()) cmpReset();
-        else redrawCompare();
+        else { redrawCompare(); redrawCompareCharts(); }
       } else if (btn.dataset.view === "explain") redrawExplain();
     });
   });
@@ -2099,6 +2251,13 @@ function wireRunControls() {
   });
   cmpConnect("cmpGoalConnect", "cmpVGoalConnect", "goalConnect");
   cmpConnect("cmpSkillConnect", "cmpVSkillConnect", "skillConnect");
+  document.getElementById("cmpSeedsRange").addEventListener("input", (e) => {
+    Cmp.seeds = Number(e.target.value);
+    document.getElementById("cmpVSeeds").textContent = String(Cmp.seeds);
+    // Only the background sweep depends on seed count -- the animated race is seed 0 regardless of N,
+    // so there's no need to disturb it with a full cmpReset().
+    cmpRebuildMeans();
+  });
 }
 
 /* ============================== Config import / export ============================== */
