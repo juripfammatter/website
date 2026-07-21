@@ -1408,14 +1408,14 @@ function drawBufferMarkers(ctx, cur, t, colors) {
   sampleEvenly(cur.mixedGoal.items, 80).forEach((p) => {
     const [px, py] = toPx(t, p[0], p[1]);
     const solved = goalSolvedSet.has(p);
-    dot(px, py, colors.goalGeneric, solved ? DOT_ALPHA.solved : DOT_ALPHA.frontier, solved ? 2.3 : 2.8);
+    dot(px, py, colors.goalGeneric, solved ? DOT_ALPHA.solved : DOT_ALPHA.frontier, solved ? 6.0 : 6.0);
   });
   cur.mixedStart.forEach((buf, k) => {
     const startSolvedSet = new Set(cur.startSolved[k].items);
     sampleEvenly(buf.items, 80).forEach((p) => {
       const [px, py] = toPx(t, p[2], p[3]);
       const solved = startSolvedSet.has(p);
-      dot(px, py, startColor(colors, k), solved ? DOT_ALPHA.solved : DOT_ALPHA.frontier, solved ? 2.3 : 2.8);
+      dot(px, py, startColor(colors, k), solved ? DOT_ALPHA.solved : DOT_ALPHA.frontier, solved ? 6.0 : 6.0);
     });
   });
 }
