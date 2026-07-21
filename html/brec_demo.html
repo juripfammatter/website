@@ -348,14 +348,14 @@
           <div class="body">
             <div class="field"><label>forward connect <span class="sub">greedyness towards solved intermediate starts (blue dots)</span></label><span class="val" id="v_goalConnectRatio"></span><input type="range" id="goalConnectRatio" min="0" max="1" step="0.01"></div>
             <div class="field"><label>backward connect <span class="sub">greedyness towards solved intermediate goals (orange dots)</span></label><span class="val" id="v_skillConnectRatio"></span><input type="range" id="skillConnectRatio" min="0" max="1" step="0.01"></div>
-            <div class="field note" id="connectLockNote" style="display:none"><div class="hint">Locked — connect needs an opposite tree.</div></div>
+            <div class="field note" id="connectLockNote" style="display:none"><div class="hint">Locked — connect needs an opposite expansion set.</div></div>
           </div>
         </details>
 
         <details class="accordion">
           <summary>Policy simulation</summary>
           <div class="body">
-            <div class="field"><label>skill transfer <span class="sub">simulated skill exchange between trees</span></label><span class="val" id="v_crossBoost"></span><input type="range" id="crossBoost" min="0" max="0.5" step="0.01"></div>
+            <div class="field"><label>skill transfer <span class="sub">simulates how policy training on one expansion set affects the other</span></label><span class="val" id="v_crossBoost"></span><input type="range" id="crossBoost" min="0" max="0.5" step="0.01"></div>
           </div>
         </details>
 
@@ -741,12 +741,20 @@ function policyRollout(grid, distCache, spawnState, goalXY, comp, cfg, rng, boos
   }
   const finalDist = isFinite(distArr[curCellIdx]) ? distArr[curCellIdx] : startDist;
   const reward = !startReachable ? 0 : startDist <= 0 ? 1 : clamp(2 - finalDist, 0, 2);
+  // Spawned already inside the goal cell (startDist 0): the reward above is pinned to exactly 1 --
+  // r_max, the TOP of the frontier band -- so "solved" (reward > r_max) is unreachable for this
+  // rollout no matter what. That is deliberate (it stops the bootstrap start==goal seed from reading
+  // as pre-solved on iteration 0), but it means such a rollout can only ever land in the frontier
+  // band. The band split must therefore ignore it outright; otherwise it re-marks the goal cell (and,
+  // for a forward walk-harvested goal that sits on the start, the start cell) as frontier every
+  // iteration, leaving both stuck bright forever with no path to solved. Flag it so phase 5 can skip.
+  const spawnAtGoal = startReachable && startDist <= 0;
   // Derived from the same (now always-accurate) curCellIdx/distArr that reward and finalCellIdx
   // use, so "arrived" -- which snaps the drawn path exactly onto the goal marker -- can never
   // disagree with them again.
   const arrived = isFinite(distArr[curCellIdx]) && distArr[curCellIdx] <= 0.35;
   return {
-    reward, path, visitedCellIndices,
+    reward, path, visitedCellIndices, spawnAtGoal,
     achievedStart: { x: spawnState.x, y: spawnState.y, theta: spawnState.theta, v: cfg.defaultV },
     finalState: { x, y, theta, v }, finalCellIdx: curCellIdx, stalled, arrived, timedOut: t >= cfg.maxSteps,
   };
@@ -1265,6 +1273,11 @@ function* iterationGenerator(cur) {
   frame.phase = 5;
   const epsSkill = cfg.frontierEps * cfg.frontierEps;
   for (const a of assignments) {
+    // A rollout that began already inside its goal cell (see spawnAtGoal) is degenerate: it measured
+    // no traversal, and its reward is pinned to the frontier ceiling so it can never read as solved.
+    // Recording it would peg the goal cell (or a start that a forward goal was harvested onto) as a
+    // permanent frontier cell. Skip it entirely -- it marks neither solved nor frontier.
+    if (a.result.spawnAtGoal) continue;
     const isFwd = a.branch === "anchor" || a.branch === "fwd_explore" || a.branch === "fwd_exploit";
     const isBwd = a.branch === "anchor" || a.branch === "bwd_explore" || a.branch === "bwd_exploit";
     const reward = a.result.reward;
