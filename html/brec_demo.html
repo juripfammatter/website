@@ -76,7 +76,17 @@
   .toolbar button.active { background: var(--ink); border-color: var(--ink); color: var(--bg-raised); }
   .toolbar .spacer { flex: 1 1 auto; }
 
-  canvas.stage { display:block; width: 100%; height: auto; border-radius: 8px; cursor: crosshair; touch-action: none; }
+  canvas.stage {
+    display:block; width: 100%; aspect-ratio: 1 / 1; height: auto; margin: 0 auto;
+    /* Caps the square canvas so header + toolbar + the grid itself always fit one viewport height --
+       otherwise a wide window (the explain-grid's left column can exceed 1000px) makes the grid taller
+       than the visible area, and the bottom rows scroll out of view. aspect-ratio keeps width/height
+       in lockstep, so capping max-width alone caps height too. 230px is a deliberately generous
+       estimate of the header + main/panel padding + toolbar above it -- erring high just shrinks the
+       grid a little more than strictly necessary, whereas erring low reintroduces the clipping. */
+    max-width: min(100%, calc(70vh - 230px));
+    border-radius: 8px; cursor: crosshair; touch-action: none;
+  }
   .stage-wrap { position: relative; }
   .stage-wrap.scrubbing::after {
     content: "viewing history — click Live to resume"; position:absolute; top:8px; left:8px;
@@ -325,14 +335,14 @@
           </div>
         </details>
 
-        <details class="accordion" open>
+        <details class="accordion">
           <summary>Policy simulation</summary>
           <div class="body">
             <div class="field"><label>skill transfer <span class="sub">simulated skill exchange between trees</span></label><span class="val" id="v_crossBoost"></span><input type="range" id="crossBoost" min="0" max="1" step="0.01"></div>
           </div>
         </details>
 
-        <details class="accordion" open>
+        <details class="accordion">
           <summary>Envs &amp; horizons</summary>
           <div class="body">
             <div class="field"><label>rollout envs</label><span class="val" id="v_numTrainEnvs"></span><input type="range" id="numTrainEnvs" min="4" max="48" step="2"></div>
@@ -404,12 +414,12 @@
         </div>
       </div>
       <div class="chart-wrap">
-        <h2>goals reached vs. iteration — mean over seeds</h2>
+        <h2>goals reached vs. iteration (mean over seeds)</h2>
         <canvas id="chartCanvas" width="1200" height="220"></canvas>
         <div class="chart-legend" id="goalsChartLegend"></div>
       </div>
       <div class="chart-wrap">
-        <h2>covered region vs. iteration — fraction of free cells proven, mean over seeds</h2>
+        <h2>covered region vs. iteration: fraction of free cells covered (mean over seeds)</h2>
         <canvas id="coverageChartCanvas" width="1200" height="220"></canvas>
         <div class="chart-legend" id="coverageChartLegend"></div>
       </div>
@@ -1247,9 +1257,39 @@ function* iterationGenerator(cur) {
 }
 
 /* ============================== 10. Rendering primitives ============================== */
+/* The logical drawing-coordinate space a canvas's contents are authored in -- distinct from its
+   backing-store resolution (canvas.width/height) once setupHiDPICanvas has repointed the latter at
+   devicePixelRatio-scaled pixels. Canvases that were never HiDPI-adjusted (the compare-tab minis)
+   fall back to canvas.width/height directly, exactly as before. */
+function logicalSize(canvas) { return { w: canvas._logicalW || canvas.width, h: canvas._logicalH || canvas.height }; }
 function stageTransform(canvas, grid) {
-  const cell = Math.min(canvas.width / grid.W, canvas.height / grid.H);
-  return { cell, offX: (canvas.width - cell * grid.W) / 2, offY: (canvas.height - cell * grid.H) / 2 };
+  const { w, h } = logicalSize(canvas);
+  const cell = Math.min(w / grid.W, h / grid.H);
+  return { cell, offX: (w - cell * grid.W) / 2, offY: (h - cell * grid.H) / 2 };
+}
+/* Sizes a canvas's backing store to its ACTUAL on-screen CSS box times devicePixelRatio, so the grid
+   stays crisp both on Retina displays and when the box itself is simply rendered larger than the
+   markup's 720x720 attributes (the explain-grid's left column can exceed 1000 CSS px on a wide
+   desktop window -- plain upscaling of a fixed 720px bitmap was the main source of blur, DPI aside).
+   A ResizeObserver keeps it correct as the box changes (window resize, the viewport-height CSS cap
+   above resolving differently, or the tab becoming visible again after being display:none). None of
+   the existing draw code needs to change: it already goes through logicalSize()/stageTransform()
+   rather than reading canvas.width directly, so retargeting the backing store here is sufficient. */
+function setupHiDPICanvas(canvas, onResize) {
+  const ctx = canvas.getContext("2d");
+  const resize = () => {
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height));
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+    if (bw === canvas.width && bh === canvas.height && w === canvas._logicalW && h === canvas._logicalH) return;
+    canvas.width = bw; canvas.height = bh;
+    canvas._logicalW = w; canvas._logicalH = h;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (onResize) onResize();
+  };
+  new ResizeObserver(resize).observe(canvas);
+  resize();
 }
 function toPx(t, x, y) { return [t.offX + x * t.cell, t.offY + y * t.cell]; }
 
@@ -1499,7 +1539,8 @@ function renderStage(canvas, cur, frame) {
   const ctx = canvas.getContext("2d");
   const colors = pal();
   const t = stageTransform(canvas, cur.grid);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const sz = logicalSize(canvas);
+  ctx.clearRect(0, 0, sz.w, sz.h);
   drawFloorAndWalls(ctx, cur.grid, t, colors);
   drawCoverageArrays(ctx, cur.grid, cur.goalCoverEver, cur.goalFrontierEver, cur.startCoverEver, cur.startFrontierEver, t, colors);
   drawBufferMarkers(ctx, cur, t, colors);
@@ -1512,7 +1553,8 @@ function renderStageSnapshot(canvas, grid, snap) {
   const t = stageTransform(canvas, grid);
   const initIdx = cellIdxOf(grid, grid.init.x, grid.init.y);
   const flags = grid.anchors.map((a, k) => !!snap.goalCoverEver[cellIdxOf(grid, a.x, a.y)] || !!snap.startCoverEver[k][initIdx]);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const sz = logicalSize(canvas);
+  ctx.clearRect(0, 0, sz.w, sz.h);
   drawFloorAndWalls(ctx, grid, t, colors);
   drawCoverageArrays(ctx, grid, snap.goalCoverEver, snap.goalFrontierEver, snap.startCoverEver, snap.startFrontierEver, t, colors);
   drawStartAndGoals(ctx, grid, flags, t, colors);
@@ -1521,7 +1563,8 @@ function renderMiniStage(canvas, cur) {
   const ctx = canvas.getContext("2d");
   const colors = pal();
   const t = stageTransform(canvas, cur.grid);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const sz = logicalSize(canvas);
+  ctx.clearRect(0, 0, sz.w, sz.h);
   drawFloorAndWalls(ctx, cur.grid, t, colors);
   drawCoverageArrays(ctx, cur.grid, cur.goalCoverEver, cur.goalFrontierEver, cur.startCoverEver, cur.startFrontierEver, t, colors);
   drawStartAndGoals(ctx, cur.grid, cur.goalAchievedFlags(), t, colors);
@@ -1878,8 +1921,11 @@ function updateHistorySlider() {
 /* ---- grid editing ---- */
 function gridPosFromEvent(canvas, grid, evt) {
   const rect = canvas.getBoundingClientRect();
-  const px = (evt.clientX - rect.left) * (canvas.width / rect.width);
-  const py = (evt.clientY - rect.top) * (canvas.height / rect.height);
+  // Must map into the LOGICAL coordinate space stageTransform uses, not the (now DPI-inflated)
+  // backing-store canvas.width/height -- otherwise clicks land a devicePixelRatio factor off.
+  const sz = logicalSize(canvas);
+  const px = (evt.clientX - rect.left) * (sz.w / rect.width);
+  const py = (evt.clientY - rect.top) * (sz.h / rect.height);
   const t = stageTransform(canvas, grid);
   return { cx: Math.floor((px - t.offX) / t.cell), cy: Math.floor((py - t.offY) / t.cell) };
 }
@@ -2382,6 +2428,8 @@ function boot() {
   Object.assign(App.cfg, MODE_PRESETS.bidir);
   renderAlgorithm();
   syncSlidersFromCfg();
+  // Before the first render, so it never draws one frame against the stale 720x720 backing store.
+  setupHiDPICanvas(document.getElementById("stageCanvas"), () => { if (App.cur) redrawExplain(); });
   wireModeButtons();
   wireGridEditing();
   wireSliders();
