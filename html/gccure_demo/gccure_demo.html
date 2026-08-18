@@ -224,52 +224,24 @@
   .chart-legend .ln { width:18px; height:0; border-top: 2px solid; display:inline-block; }
   .chart-legend .ln.dash { border-top-style: dashed; }
 
-  /* ---- LaTeX-style algorithm environment ---- */
-  .algo-wrap { max-width: 900px; margin: 0 auto; }
-  .algo {
-    font-family: var(--serif); font-size: 14.5px; line-height: 1.65;
-    background: var(--bg-raised); color: var(--ink);
-    border-top: 2.2px solid var(--ink); border-bottom: 2.2px solid var(--ink);
-    padding: 0; margin: 0 0 20px;
+  /* ---- Compiled LaTeX algorithm figures ---- */
+  .algo-wrap { max-width: 940px; margin: 0 auto; }
+  /* Compiled LaTeX algorithm figures (img/alg_*.svg, built from the alg_*.tex siblings).
+     The SVGs are black glyphs and rules on a transparent ground, with #008080 comments. Inverting
+     and rotating the hue 180deg lifts the text to white against this page's dark ground and carries
+     the teal through as a brighter teal, while transparent pixels stay transparent -- so no light
+     card is needed and the LaTeX typesetting is untouched. Natural width is 435pt (~580px); the
+     cap below renders them at about 1.5x so the body type sits near the page's own size. */
+  .alg-fig { margin: 0 0 28px; padding: 0; overflow-x: auto; }
+  .alg-fig img {
+    display: block; width: 100%; min-width: 520px; height: auto;
+    filter: invert(1) hue-rotate(180deg);
   }
-  .algo .caption {
-    font-family: var(--sans); font-size: 13px; font-weight: 700; letter-spacing: .01em;
-    padding: 9px 16px; border-bottom: 1px solid var(--line);
-  }
-  .algo .caption .num { font-variant: small-caps; }
-  .algo .io { padding: 8px 16px 4px; font-size: 13.5px; }
-  .algo .io .k { font-variant: small-caps; font-weight: 700; letter-spacing: .03em; }
-  .algo ol { list-style: none; margin: 0; padding: 4px 16px 12px; counter-reset: algoline; }
-  .algo li {
-    counter-increment: algoline; position: relative; padding-left: 34px; white-space: pre-wrap;
-  }
-  .algo li::before {
-    content: counter(algoline); position: absolute; left: 0; width: 24px; text-align: right;
-    font-family: var(--mono); font-size: 11px; color: var(--ink-faint);
-    top: 0.28em; font-variant-numeric: tabular-nums;
-  }
-  .algo li.nonum { counter-increment: none; }
-  .algo li.nonum::before { content: ""; }
-  .algo li.sec {
-    padding-left: 34px; font-family: var(--sans); font-size: 11px; text-transform: uppercase;
-    letter-spacing: .07em; color: var(--ink-dim); margin-top: 11px; margin-bottom: 3px; font-weight: 700;
-  }
-  .algo .kw { font-weight: 700; }
-  .algo .var { font-style: italic; }
-  .algo .cmt { color: var(--ink-faint); font-style: italic; }
-  .algo .ind1 { padding-left: 52px; }
-  .algo .ind2 { padding-left: 70px; }
-  .algo li.ind1::before, .algo li.ind2::before { left: 0; }
-  .algo .where { padding: 0 16px 14px 34px; font-size: 13.5px; }
-
-  .notes-panel { max-width: 900px; margin: 0 auto; }
-  .notes-panel ul { padding-left: 20px; margin: 6px 0; }
-  .notes-panel li { margin: 7px 0; font-size: 13px; }
-  .notes-panel code { font-family: var(--mono); font-size: 12px; background: var(--bg-sunken); padding: 1px 5px; border-radius: 4px; }
-  .notes-panel h3 { font-size: 13px; margin: 15px 0 3px; }
-  .notes-panel h2 {
-    font-family: var(--mono); font-size: 11px; letter-spacing:.06em; text-transform:uppercase;
-    color: var(--ink-dim); margin: 26px 0 6px;
+  .alg-fig.missing { border: 1px dashed var(--line-strong); border-radius: var(--radius); }
+  .alg-fig.missing img { display: none; }
+  .alg-fig.missing::after {
+    content: "waiting for " attr(data-file) " \2014 drop it in this folder";
+    display: block; font-family: var(--mono); font-size: 12px; color: var(--ink-dim); padding: 10px 2px;
   }
 
   .footer-credit { text-align:center; color: var(--ink-faint); font-size: 11.5px; padding: 14px 0 30px; }
@@ -280,7 +252,7 @@
   <div class="tabs">
     <button class="tab-btn active" data-view="explain">Explain</button>
     <button class="tab-btn" data-view="compare">Compare</button>
-    <!-- <button class="tab-btn" data-view="algorithm">Algorithm</button> -->
+    <button class="tab-btn" data-view="algorithm">Pseudocode</button>
   </div>
 </header>
 
@@ -446,41 +418,18 @@
   <!-- ============================== ALGORITHM VIEW ============================== -->
   <div class="view" id="view-algorithm">
     <div class="algo-wrap">
-      <div class="algo" id="algoBox"></div>
-    </div>
-    <div class="notes-panel">
-      <h2>How this differs from real training</h2>
-      <h3>Policy</h3>
-      <ul><li>A practice-driven per-cell competence field, not a PPO-trained goal-conditioned network. No observations, no actions, no gradient steps — competence rises simply because a policy-branch episode visited a cell.</li></ul>
-      <h3>Rollout</h3>
-      <ul><li>A turn-rate-limited geodesic-gradient follower over a BFS distance field. No rigid-body physics, no contacts, no falling/termination reward terms.</li></ul>
-      <h3>Reward</h3>
-      <ul><li>Normalized geodesic progress in <code>[0,1]</code>, so <code>r_min</code>/<code>r_max</code> live on that scale here — not the parkour reward-term sum, where the shipped preset's <code>r_max=50.0</code>.</li></ul>
-      <h3>State</h3>
-      <ul><li>The agent carries a heading in addition to its position, and the start-side novelty key uses it — so the space starts are stored in is strictly larger than the 2-D <code>(x, y)</code> subspace used for nearest-neighbour search, mirroring parkour's 18-D <code>init_subspace</code> against 3-D xyz goals. Heading is no longer drawn, to keep the canvas readable.</li></ul>
-      <h3>Achieved start</h3>
-      <ul><li>Identical to the commanded start here, because there is no physics settling step. In the real system the two differ by one integration step (see gc_cure.md §6) — which is precisely why the real code re-derives it from the trajectory instead of assuming it equals the commanded value.</li></ul>
-      <h3>Iteration order</h3>
-      <ul><li>This demo runs walk-seed-selection/walks/harvest <em>before</em> branch-assignment/rollout/band-split within each iteration, for a more linear "explore first, then plan" narrative. The real system interleaves both — it harvests the previous call's walks and episodes at the top of every call, then assigns new starts/goals for whichever envs are resetting — and every iteration here resets <em>all</em> configured envs synchronously in five explicit phases, unlike the real system's fully asynchronous per-env resets.</li></ul>
-      <h3>Vectorization</h3>
-      <ul><li>The real system batches every operation as tensor ops across hundreds of parallel envs (PyTorch, FAISS). This demo loops per-env in plain JavaScript with a brute-force nearest-neighbour search. The semantics match; the performance characteristics don't.</li></ul>
-      <h3>Scale &amp; fixed knobs</h3>
-      <ul><li>The reward bands, novelty thresholds, the replay ratios, the competence-model parameters and the RNG seed are fixed rather than exposed, to keep the controls focused on the branch-mode and walk-seeding story. The replay ratios match the shipped preset (<code>goal_replay_ratio=0.4</code>, <code>start_replay_ratio=0.0</code>).</li></ul>
-      <h3>update_interval</h3>
-      <ul><li>The mixed buffers rebuild every iteration here; the real system rebuilds on an interval measured in environment steps. With thousands of parallel envs the buffers refill fast enough that the staleness never shows, but at this demo's scale a multi-iteration freeze pins the walk-seeding pool to a handful of entries and makes voronoi selection look degenerate — it keeps returning the same seeds simply because there is nothing else in the buffer to return.</li></ul>
-      <h3>select_knn, and why it is 1 here</h3>
-      <ul><li><code>get_similar</code> takes the <code>select_knn</code> nearest buffer entries to the query and then picks <em>uniformly among them</em> — a deliberate softening that buys seed diversity. The shipped presets use 4. This demo uses <strong>1</strong>, making voronoi selection exact nearest-neighbour, i.e. textbook Voronoi-cell-proportional sampling: an entry is drawn with probability equal to the share of free space closer to it than to any other entry. At the buffer sizes here (tens of entries, not thousands) a top-4 uniform pick is visually indistinguishable from picking at random, which hides the mechanism the demo exists to show.</li></ul>
-      <h3>Bootstrap seeding</h3>
-      <ul><li>Walk-seed selection reads the mixed buffers as they stood at the start of the iteration, and those are empty on iteration 1 — so the first iteration performs <strong>no voronoi selection at all</strong>, in either direction. Every seed is a fixed bootstrap spawn, drawn without an attractor marker because no selection took place.</li>
-      <li>The forward bootstrap is the start region, matching the real code. The backward bootstrap is <strong>the goal itself</strong>, which is a deliberate divergence: the real fallback is also the initial-state sampler, so a backward walk with nothing proven yet starts in the <em>start</em> region while recording the goal as its inherited goal. That is survivable at training scale, where the mixed buffer fills within a few calls, but it reads backwards in an explainer and it self-propagates here — those walks fill <code>start_candidate</code> with states nowhere near the goal. The reverse-curriculum bootstrap already establishes the goal as a known-good start, so the demo falls back to it.</li></ul>
-      <h3>Coverage bookkeeping</h3>
-      <ul><li>Coverage is recorded as a persistent "ever proven" bitmap, so a cell stays shaded once proven. The real buffers are finite and ring-evicting, so an entry that first proved a cell can later be dropped — the underlying buffers here behave the same way, but the display does not flicker with them.</li></ul>
-      <h3>Ablated away</h3>
-      <ul><li>The reachability branch, the greedy seed mode, and the runner-side walk-tail split (<code>random_reachability_ratio</code>) are absent — matching the no-reachability arm this demo targets. The forward/backward walk split is derived from which branches are active, so a single-direction mode never spends walk envs on the inactive direction.</li></ul>
-      <h3>Standing assumption</h3>
-      <ul><li>The competence model makes sub-skill <em>composition</em> nearly automatic: once every cell on a path is practiced, a rollout crossing it succeeds unless the finite horizon or a per-step stall intervenes. This mirrors the algorithm's own premise — that a goal-conditioned policy which has separately mastered two adjoining regions can chain them — rather than proving it independently.</li></ul>
-      <h3>Two competence fields, not one</h3>
-      <ul><li>The real system trains a <em>single</em> goal-conditioned policy on both forward and backward tasks, so its competence is genuinely shared — backward practice near the goal directly improves forward trips through the same cells. This demo instead gives each tree its <strong>own</strong> competence field, deliberately breaking that sharing. With one shared field the two trees connect the instant their practiced regions touch, which reads as a start→goal solution appearing before the forward frontier has itself reached the goal — technically faithful to the shared policy, but it hides the per-tree expansion the demo is built to show. Separate fields make each tree earn its own end; the <em>skill transfer</em> slider then re-introduces cross-tree help explicitly (it nudges a cell the other tree has already <em>proven</em> toward full competence), so composition becomes a visible, opt-in effect rather than a hidden default. It is off by default.</li></ul>
+      <figure class="alg-fig" data-file="img/alg_training_loop.svg">
+        <img src="img/alg_training_loop.svg" alt="Algorithm 1 — Bidirectional frontier training loop" onerror="this.parentElement.classList.add('missing')">
+      </figure>
+      <figure class="alg-fig" data-file="img/alg_random_walk.svg">
+        <img src="img/alg_random_walk.svg" alt="Algorithm 2 — Random walk frontier expansion" onerror="this.parentElement.classList.add('missing')">
+      </figure>
+      <figure class="alg-fig" data-file="img/alg_threshold.svg">
+        <img src="img/alg_threshold.svg" alt="Algorithm 3 — Return-based thresholding of rollouts into frontier and solved buffers" onerror="this.parentElement.classList.add('missing')">
+      </figure>
+      <figure class="alg-fig" data-file="img/alg_mix.svg">
+        <img src="img/alg_mix.svg" alt="Algorithm 4 — Rebuild of the intermediate set from frontier and solved buffers" onerror="this.parentElement.classList.add('missing')">
+      </figure>
     </div>
   </div>
 </main>
@@ -823,16 +772,6 @@ class SimilarityBuffer {
     this._evict();
     return kept;
   }
-  /* Promotion hook: drops any entry within minSqDist of row (same eps used to admit it), so a
-     frontier state that has since been solved elsewhere doesn't linger as a stale duplicate. */
-  removeSimilar(row, minSqDist) {
-    const v = this.noveltyProj(row);
-    for (let i = this.items.length - 1; i >= 0; i--) {
-      if (sqDist(this.noveltyVecs[i], v) < minSqDist) {
-        this.items.splice(i, 1); this.searchVecs.splice(i, 1); this.noveltyVecs.splice(i, 1);
-      }
-    }
-  }
   getSimilar(query, knn, rng) {
     if (this.items.length === 0) return null;
     const dists = this.searchVecs.map((v, i) => [sqDist(v, query), i]);
@@ -864,11 +803,11 @@ function defaultCfg() {
     anchorRatio: 0.0, fwdExploreRatio: 0.35, fwdExploitRatio: 0.15, bwdExploreRatio: 0.35, bwdExploitRatio: 0.15,
     goalConnectRatio: 0.5, skillConnectRatio: 0.5,
     // cross-tree hand-off boost: how far a cell the OPPOSITE tree has proven is nudged toward full
-    // competence when this tree rolls through it. Now the SOLE cross-tree coupling (the trees no
-    // longer share a competence field), so it defaults OFF -- the shipped behaviour is two fully
-    // independent trees, each earning its own end. Raise the "skill transfer" slider to opt into
-    // cross-tree help and watch the two frontiers accelerate each other where they overlap. The real
-    // no-reachability algorithm has no such term.
+    // competence when this tree rolls through it. This is the SOLE cross-tree coupling, since the
+    // trees no longer share a competence field, and it stands in for Alg. 1 line 9's single shared
+    // policy update -- there, one PPO step over the union of both directions' rollouts couples them
+    // automatically. Hence a non-zero shipped default; drop the "skill transfer" slider to 0 for two
+    // fully independent trees, each earning its own end.
     crossBoost: 0.15,
     numTrainEnvs: 32, numWalkEnvs: 16,
     walkHorizonForward: 10, walkHorizonBackward: 10,
@@ -940,8 +879,8 @@ class Curriculum {
     // two warm regions met -- so a forward rollout could certify start->goal without forward's own
     // frontier ever reaching the goal region, and symmetrically for backward. Separate fields force
     // each tree to genuinely earn its own end; the ONLY cross-tree coupling left is the explicit,
-    // slider-controlled crossBoost (default 0), which rides the OTHER tree's proven COVERAGE, not its
-    // competence -- opt-in "skill transfer" rather than a hidden always-on shortcut.
+    // slider-controlled crossBoost, which rides the OTHER tree's proven COVERAGE rather than its
+    // competence -- an explicit, tunable stand-in for the shared policy update of Alg. 1 line 9.
     this.compFwd = new CompetenceField(grid);
     this.compBwd = new CompetenceField(grid);
     this.iterations = 0;
@@ -997,6 +936,12 @@ class Curriculum {
     const ratios = raw.map((r) => r / sum);
     const total = this.cfg.numTrainEnvs;
     const counts = ratios.map((r) => Math.floor(total * r));
+    // Residual goes to the first non-empty branch, matching the real _split_train_envs. Note this
+    // rounds UP toward anchor: at 32 envs the 0.05/0.325/0.15/0.325/0.15 split lands on
+    // anchor:4 fwd:14 bwd:14, so the anchor branch's effective share is ~12.5%, not 5%. That is
+    // load-bearing here -- the anchor role is the only one that runs the true p0 -> G task, and it
+    // is what certifies a goal as reached. Apportioning the residual by largest remainder instead
+    // (anchor:2) is arithmetically honest but ~25% slower to converge in every maze.
     let residual = total - counts.reduce((a, b) => a + b, 0);
     if (residual > 0) {
       let placed = false;
@@ -1187,7 +1132,9 @@ function* iterationGenerator(cur) {
   frame.phase = 3;
   const epsCand = cfg.candidateEps * cfg.candidateEps;
   for (const s of frame.walkSeeds) {
-    const subs = subsample(s.path, 8);
+    // from t >= 1 (Alg. 2's loop starts there): path[0] is the seed the walk was launched from,
+    // which is already a buffer entry -- harvesting it re-admits an existing state as a candidate.
+    const subs = subsample(s.path.slice(1), 8);
     if (s.dir === "fwd") {
       const kept = cur.goalCandidate.addNovel(subs.map((st) => makePair([st.x, st.y], st)), epsCand);
       frame.harvest.goalCandidate += kept.length;
@@ -1286,7 +1233,6 @@ function* iterationGenerator(cur) {
       const goalCellIdx = cellIdxOf(grid, a.goal[0], a.goal[1]);
       if (reward > cfg.rMax) {
         cur.goalSolved.addNovel([pair], epsSkill);
-        cur.goalFrontier.removeSimilar(pair, epsSkill);
         cur.goalCoverEver[goalCellIdx] = 1;
         frame.bandSplit.fwdSolved++;
       } else if (reward > cfg.rMin) {
@@ -1301,7 +1247,6 @@ function* iterationGenerator(cur) {
       const startCellIdx = cellIdxOf(grid, a.result.achievedStart.x, a.result.achievedStart.y);
       if (reward > cfg.rMax) {
         cur.startSolved[k].addNovel([pair], epsSkill);
-        cur.startFrontier[k].removeSimilar(pair, epsSkill);
         cur.startCoverEver[k][startCellIdx] = 1;
         frame.bandSplit.bwdSolved++;
       } else if (reward > cfg.rMin) {
@@ -1816,84 +1761,15 @@ function buildLegend(container, cur) {
   }
 }
 
-/* ============================== 11. Algorithm 1, typeset ============================== */
-const ALGO_LINES = [
-  { sec: "Phase 1 — select walk seeds" },
-  { t: '<span class="kw">for each</span> forward-walk env <span class="kw">do</span>' },
-  { i: 1, t: '<span class="kw">with prob.</span> <span class="var">goal_connect_ratio</span>: &nbsp;<span class="var">a</span> ← xy( state( UniformDraw( ⋃<sub>k</sub> <span class="var">start_solved</span>[k] ) ) ) &nbsp;&nbsp;<span class="cmt">▷ connect</span>' },
-  { i: 1, t: '<span class="kw">otherwise</span>: &nbsp;<span class="var">a</span> ← xy( TaskSpaceSampler() ) &nbsp;&nbsp;<span class="cmt">▷ voronoi</span>' },
-  { i: 1, t: '<span class="var">seed</span> ← state( get_similar(<span class="var">mixed_goal</span>, <span class="var">a</span>, knn) ) &nbsp;&nbsp;<span class="cmt">▷ InitialStateSampler() if mixed_goal = ∅</span>' },
-  { t: '<span class="kw">for each</span> backward-walk env <span class="kw">do</span>' },
-  { i: 1, t: '<span class="var">k</span> ~ U{0..K−1} &nbsp;&nbsp;<span class="cmt">▷ this walk serves goal k only</span>' },
-  { i: 1, t: '<span class="kw">with prob.</span> <span class="var">skill_connect_ratio</span>: &nbsp;<span class="var">a</span> ← xy( UniformDraw(<span class="var">goal_solved</span>) ) &nbsp;&nbsp;<span class="cmt">▷ connect</span>' },
-  { i: 1, t: '<span class="kw">otherwise</span>: &nbsp;<span class="var">a</span> ← xy( TaskSpaceSampler() ) &nbsp;&nbsp;<span class="cmt">▷ voronoi</span>' },
-  { i: 1, t: '(<span class="var">g</span>, <span class="var">seed</span>) ← split( get_similar(<span class="var">mixed_start</span>[k], <span class="var">a</span>, knn) ) &nbsp;&nbsp;<span class="cmt">▷ (G<sub>k</sub>, state(G<sub>k</sub>)) if empty</span>' },
-  { sec: "Phase 2 — random walks (random-action tail, no policy)" },
-  { t: '<span class="kw">for each</span> walk env: &nbsp;<span class="var">τ</span> ← RandomActionWalk(<span class="var">seed</span>, horizon) &nbsp;&nbsp;<span class="cmt">▷ physics only; competence not consulted</span>' },
-  { sec: "Phase 3 — intermediate starts / goals" },
-  { t: 'forward walks: &nbsp;add_novel( <span class="var">goal_candidate</span>, {( xy(s), s ) : s ∈ <span class="var">τ</span>}, ε<sub>cand</sub> ) &nbsp;&nbsp;<span class="cmt">▷ each state paired with its own xy</span>' },
-  { t: 'backward walks: add_novel( <span class="var">start_candidate</span>[k], {( <span class="var">g</span>, s ) : s ∈ <span class="var">τ</span>}, ε<sub>cand</sub> ) &nbsp;&nbsp;<span class="cmt">▷ paired with the goal that seeded it</span>' },
-  { sec: "Phase 3b — assign branches from those candidates" },
-  { t: 'split train envs into {anchor, fwd_explore, fwd_exploit, bwd_explore, bwd_exploit} by ratio' },
-  { t: '<span class="kw">anchor</span>: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="var">start</span> ← S();&nbsp; <span class="var">goal</span> ← G<sub>k</sub>, &nbsp;k ~ U{0..K−1} &nbsp;&nbsp;<span class="cmt">▷ the one true task</span>' },
-  { t: '<span class="kw">fwd_explore</span>: <span class="var">start</span> ← S();&nbsp; <span class="var">goal</span> ← xy( get_random(<span class="var">goal_candidate</span>) )' },
-  { t: '<span class="kw">fwd_exploit</span>: <span class="var">start</span> ← S();&nbsp; <span class="var">goal</span> ← xy( get_random(<span class="var">mixed_goal</span>) )' },
-  { t: '<span class="kw">bwd_explore</span>: <span class="var">k</span> ~ U{0..K−1};&nbsp; <span class="var">start</span> ← state( get_random(<span class="var">start_candidate</span>[k]) );&nbsp; <span class="var">goal</span> ← G<sub>k</sub>' },
-  { t: '<span class="kw">bwd_exploit</span>: <span class="var">k</span> ~ U{0..K−1};&nbsp; (<span class="var">goal</span>, <span class="var">start</span>) ← split( get_random(<span class="var">mixed_start</span>[k]) )' },
-  { t: 'Commit: set_tasks(<span class="var">start</span>) <span class="cmt">▷ masked to init_subspace, rest from default_task</span>; remember (<span class="var">goal</span>, state) and <span class="var">k</span>' },
-  { sec: "Phase 4 — rollout episodes" },
-  { t: '<span class="kw">for each</span> train env: &nbsp;(<span class="var">reward</span>, <span class="var">achieved_start</span>) ← Rollout(π, <span class="var">start</span>, <span class="var">goal</span>)' },
-  { sec: "Phase 5 — band split and reinforce" },
-  { t: '<span class="kw">for each</span> finished episode <span class="kw">do</span>' },
-  { i: 1, t: '<span class="kw">if</span> role ∈ {anchor, fwd_*}: &nbsp;BandRoute( <span class="var">goal_solved</span>, <span class="var">goal_frontier</span>, (<span class="var">goal</span>, state) )' },
-  { i: 1, t: '<span class="kw">if</span> role ∈ {anchor, bwd_*}: BandRoute( <span class="var">start_solved</span>[k], <span class="var">start_frontier</span>[k], (<span class="var">goal</span>, <span class="var">achieved_start</span>) )' },
-  { i: 1, nonum: true, t: '<span class="cmt">▷ an anchor episode does both, from ONE measured reward — two independently-built pairs</span>' },
-  { t: 'reinforce π on the cells the episodes actually visited' },
-  { t: '<span class="kw">every</span> <span class="var">update_interval</span> iterations: rebuild <span class="var">mixed_goal</span> and every <span class="var">mixed_start</span>[k]' },
-];
-function renderAlgorithm() {
-  const box = document.getElementById("algoBox");
-  box.innerHTML = "";
-  const cap = document.createElement("div");
-  cap.className = "caption";
-  cap.innerHTML = '<span class="num">Algorithm 1</span> &nbsp;Bidirectional Reachability Expansion — one iteration (no-reachability arm)';
-  box.appendChild(cap);
-  const io = document.createElement("div");
-  io.className = "io";
-  io.innerHTML =
-    '<div><span class="k">Input:</span> buffers {<span class="var">goal_*</span>, <span class="var">start_*</span>[k]}, competence-bearing policy π, goals {G<sub>0</sub>…G<sub>K−1</sub>}, start region S</div>' +
-    '<div><span class="k">Output:</span> buffers grown by one round of exploration and verification</div>';
-  box.appendChild(io);
-  const ol = document.createElement("ol");
-  for (const line of ALGO_LINES) {
-    const li = document.createElement("li");
-    if (line.sec) { li.className = "sec nonum"; li.textContent = line.sec; }
-    else {
-      li.className = (line.i === 1 ? "ind1 " : line.i === 2 ? "ind2 " : "") + (line.nonum ? "nonum" : "");
-      li.innerHTML = line.t;
-    }
-    ol.appendChild(li);
-  }
-  box.appendChild(ol);
-  const where = document.createElement("div");
-  where.className = "where";
-  where.innerHTML =
-    '<span class="kw">where</span> BandRoute(<span class="var">solved</span>, <span class="var">frontier</span>, <span class="var">pair</span>) = ' +
-    'add_novel(<span class="var">solved</span>, <span class="var">pair</span>, ε<sub>skill</sub>) <span class="kw">if</span> reward &gt; r<sub>max</sub>; ' +
-    'add_novel(<span class="var">frontier</span>, <span class="var">pair</span>, ε<sub>skill</sub>) <span class="kw">if</span> r<sub>min</sub> ≤ reward ≤ r<sub>max</sub>; ' +
-    'discard otherwise.';
-  box.appendChild(where);
-}
-
 /* ============================== 12. Explain-tab controller ============================== */
-const PHASE_NAMES = ["select walk seeds", "random walks", "intermediate starts/goals", "rollout episodes", "collect solved intermediates"];
+const PHASE_NAMES = ["select walk seeds", "random walks", "intermediate starts/goals", "rollout episodes", "threshold + mix"];
 const LAST_PHASE = PHASE_NAMES.length;
 const PHASE_HINTS = [
-  "Select seeds for the random walks. Voronoi: sample a random task-space point and find the nearest seed in the opposite tree's mixed buffer. Connect: sample a proven start/goal from the opposite tree's solved buffer and find the nearest seed in the mixed buffer.",
+  "Select seeds for the random walks. Both modes seed from THIS tree's own mixed buffer and differ only in the attractor that picks which entry. Voronoi: a fresh random task-space point. Connect: a proven state from the OPPOSITE tree's solved buffer, so each tree grows toward the other's provable meeting points.",
   "Walk from that seed under random steering. No competence gating and no goal: this is pure physics-driven exploration of what lies just beyond the frontier.",
-  "Sample intermediate starts/goals from the random-walk trajectories. The full dimensional state is proejcted to the goal space (here xy).",
-  "Forward expansion rollouts initialized on the initial distribution and goal conditined on the intermediate goals; backward expansion rollouts are initialized on the intermediate starts and goal conditioned on the targeted goal.",
-  "Successful trajectories are added to the solved set.",
+  "Subsample each random walk into the candidate buffers, then draw this iteration's tasks from them. The full state is projected to the goal space (here xy). Candidates persist across iterations.",
+  "Forward expansion rollouts are initialized on the initial distribution and goal-conditioned on the intermediate goals; backward expansion rollouts are initialized on the intermediate starts and goal-conditioned on the targeted goal.",
+  "Threshold each rollout by its return: above r_max joins the solved buffer, inside the r_min..r_max band joins the frontier, below is discarded. Then the mixed buffers are rebuilt as frontier plus a replay fraction of solved -- the pool the next iteration seeds and exploits from.",
 ];
 
 const App = { grid: null, cfg: null, cur: null, gen: null, frame: null, running: false, timerId: null, mode: "wall", painting: false, scrubIndex: null, modeName: "bidir" };
@@ -2529,7 +2405,6 @@ function boot() {
   App.cfg = defaultCfg();
   App.modeName = "bidir";
   Object.assign(App.cfg, MODE_PRESETS.bidir);
-  renderAlgorithm();
   syncSlidersFromCfg();
   // Before the first render, so it never draws one frame against the stale 720x720 backing store.
   setupHiDPICanvas(document.getElementById("stageCanvas"), () => { if (App.cur) redrawExplain(); });
