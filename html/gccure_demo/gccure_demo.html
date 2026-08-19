@@ -287,6 +287,7 @@
         <button class="btn" id="stopBtn" disabled>Stop</button>
         <button class="btn" id="resetRunBtn">Reset run</button>
         <button class="btn" id="exportPngBtn" title="Save the stage as it is right now (current phase, or the scrubbed-to iteration) as a PNG">Export PNG ↧</button>
+        <button class="btn" id="recGifBtn" title="Record one frame per iteration, then save an animated GIF. Resetting the run discards the recording.">Record GIF ●</button>
         <label>speed <input type="range" id="speedRange" min="1" max="8" value="4" style="width:90px;vertical-align:middle"></label>
         <span class="spacer"></span>
         <span class="stat">iteration <b id="statIter">0</b></span>
@@ -1981,6 +1982,7 @@ function newRunFromScratch() {
   App.frame = null;
   App.scrubIndex = null;
   stopRun();
+  if (Rec.on) { Rec.on = false; Rec.frames = []; Rec.q = null; updateRecButton(); }  // never splice two runs
   document.getElementById("achievedBanner").classList.remove("show");
   redrawExplain();
 }
@@ -2008,8 +2010,10 @@ function stepOnce() {
   const res = App.gen.next();
   if (res.done) { App.gen = iterationGenerator(App.cur); App.frame = App.gen.next().value; }
   else App.frame = res.value;
-  if (App.frame.phase === LAST_PHASE) { App.gen = null; updateAchievedBanner(); }
+  const finished = App.frame.phase === LAST_PHASE;
+  if (finished) { App.gen = null; updateAchievedBanner(); }
   redrawExplain();
+  if (finished) gifCaptureFrame();
 }
 function drainIteration() {
   ensureGenerator();
@@ -2023,6 +2027,7 @@ function stepIteration() {
   drainIteration();
   updateAchievedBanner();
   redrawExplain();
+  gifCaptureFrame();
 }
 function startRun() {
   if (App.running) return;
@@ -2035,57 +2040,230 @@ function startRun() {
     drainIteration();
     updateAchievedBanner();
     redrawExplain();
+    gifCaptureFrame();
     App.timerId = setTimeout(tick, Math.round(650 / Number(document.getElementById("speedRange").value)));
   };
   tick();
 }
-/* Re-renders whatever the stage is showing -- the live frame, or the history snapshot being
-   scrubbed -- onto an offscreen canvas at a fixed 4x of the on-screen logical size, paints the
-   panel background behind it (the stage itself is transparent outside the grid), and hands it to
-   the browser as a PNG. Drawing again rather than copying the screen canvas keeps the output
-   independent of the current window size and device pixel ratio. */
-function exportStagePNG() {
+/* Renders whatever the stage is showing -- the live frame, or the history snapshot being scrubbed
+   -- onto a fresh offscreen canvas `px` device pixels square, with the panel background composited
+   underneath (the stage canvas is transparent outside the grid). Drawing again rather than copying
+   the on-screen canvas keeps the output independent of window size and device pixel ratio. Shared by
+   the PNG and GIF exporters, so both always capture exactly what the stage shows. */
+function renderStageOffscreen(px) {
   const src = document.getElementById("stageCanvas");
   const { w, h } = logicalSize(src);
-  const scale = 4;
   const off = document.createElement("canvas");
-  off.width = Math.round(w * scale); off.height = Math.round(h * scale);
-  off._logicalW = w; off._logicalH = h;              // logicalSize()/stageTransform() read these
+  off.width = px; off.height = px;
+  off._logicalW = w; off._logicalH = h;          // logicalSize()/stageTransform() read these
   const ctx = off.getContext("2d");
-  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  const k = px / Math.max(w, h);
+  ctx.setTransform(k, 0, 0, k, 0, 0);
   const scrubbing = App.scrubIndex != null && App.cur.history.length > 0;
   const snap = scrubbing ? App.cur.history[Math.min(App.scrubIndex, App.cur.history.length - 1)] : null;
   if (snap) renderStageSnapshot(off, App.cur.grid, snap, App.cur);
   else renderStage(off, App.cur, App.frame);
-  // render* start with clearRect, so the background goes in afterwards, underneath
+  // render* open with clearRect, so the background goes on afterwards, underneath
   ctx.save();
   ctx.globalCompositeOperation = "destination-over";
   ctx.fillStyle = pal().bgRaised;
   ctx.fillRect(0, 0, w, h);
   ctx.restore();
+  return off;
+}
+function stageExportName(ext) {
+  const scrubbing = App.scrubIndex != null && App.cur.history.length > 0;
+  const snap = scrubbing ? App.cur.history[Math.min(App.scrubIndex, App.cur.history.length - 1)] : null;
   const iter = snap ? snap.iter : App.cur.iterations;
   const phase = snap ? "snapshot" : App.frame ? "phase" + App.frame.phase : "init";
-  const name = "brec_" + App.modeName + "_iter" + iter + "_" + phase + "_" + currentTheme() + ".png";
-  const deliver = (blob) => {
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    try {
-      const a = document.createElement("a");
-      a.href = url; a.download = name; a.rel = "noopener";
-      document.body.appendChild(a); a.click(); a.remove();
-    } catch (e) {
-      // embedded views that block downloads: at least show it, so it can be saved by hand
-      window.open(url, "_blank");
-    }
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  };
-  if (off.toBlob) off.toBlob(deliver, "image/png");
-  else { // very old engines: data URL route
-    const a = document.createElement("a");
-    a.href = off.toDataURL("image/png"); a.download = name;
-    document.body.appendChild(a); a.click(); a.remove();
-  }
+  return "brec_" + App.modeName + "_iter" + iter + "_" + phase + "_" + currentTheme() + "." + ext;
 }
+function deliverBlob(blob, name) {
+  if (!blob) return;
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement("a");
+    a.href = url; a.download = name; a.rel = "noopener";
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch (e) {
+    window.open(url, "_blank");   // embedded views that block downloads: at least show it
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+function exportStagePNG() {
+  const { w, h } = logicalSize(document.getElementById("stageCanvas"));
+  const off = renderStageOffscreen(Math.round(Math.max(w, h) * 4));
+  const name = stageExportName("png");
+  if (off.toBlob) off.toBlob((b) => deliverBlob(b, name), "image/png");
+  else { const a = document.createElement("a"); a.href = off.toDataURL("image/png"); a.download = name;
+         document.body.appendChild(a); a.click(); a.remove(); }
+}
+
+/* ---- GIF recorder -------------------------------------------------------------------------
+   One frame per completed iteration, i.e. exactly the picture Run leaves on the stage each tick.
+   Written out by hand as GIF89a rather than pulling in a library, so the page stays a single file
+   with no external requests.
+
+   Colour: GIF allows 256 per frame, and a global table shared by every frame keeps the file small
+   and the palette from flickering. The table is grown as frames arrive -- seeded with the theme's
+   exact colours so flat fills are reproduced bit-for-bit, then extended with whatever antialiasing
+   and alpha-blended coverage shades actually turn up, and once full, new colours snap to the nearest
+   entry. A 32768-slot lookup keyed on the top 5 bits per channel memoises every decision, so the
+   expensive nearest-colour scan runs at most once per distinct quantised colour rather than per
+   pixel. Frames are stored as one byte per pixel, so a full recording is a few tens of MB. */
+const GIF_SIZE = 420, GIF_MAX_FRAMES = 200, GIF_DELAY_CS = 10;
+const Rec = { on: false, frames: [], q: null };
+
+function hexToRgb(h) {
+  const v = parseInt(h.slice(1), 16);
+  return h.length === 4
+    ? [((v >> 8) & 15) * 17, ((v >> 4) & 15) * 17, (v & 15) * 17]
+    : [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+function makeQuantizer(seed) {
+  const pal = [];
+  const lut = new Int16Array(32768).fill(-1);
+  const key = (r, g, b) => ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+  for (const c of seed) {
+    const k = key(c[0], c[1], c[2]);
+    if (lut[k] < 0 && pal.length < 256) { lut[k] = pal.length; pal.push([c[0], c[1], c[2]]); }
+  }
+  return {
+    pal,
+    index(r, g, b) {
+      const k = key(r, g, b);
+      const hit = lut[k];
+      if (hit >= 0) return hit;
+      if (pal.length < 256) { lut[k] = pal.length; pal.push([r, g, b]); return pal.length - 1; }
+      let best = 0, bd = Infinity;
+      for (let j = 0; j < pal.length; j++) {
+        const q = pal[j], dr = q[0] - r, dg = q[1] - g, db = q[2] - b;
+        const d = dr * dr + dg * dg + db * db;
+        if (d < bd) { bd = d; best = j; if (d === 0) break; }
+      }
+      lut[k] = best;
+      return best;
+    },
+  };
+}
+function themeSeedColors() {
+  const c = pal();
+  const out = [];
+  for (const v of [c.bgRaised, c.ink, c.inkDim, c.inkFaint, c.line, c.wall, c.floor, c.floorLine,
+                   c.start, c.goalGeneric, c.success].concat(c.startShades, c.goalShades)) out.push(hexToRgb(v));
+  return out;
+}
+/* GIF's variable-width LZW. Codes start one bit wider than the symbol size and grow as the table
+   fills; at 4096 entries the table is cleared and rebuilt, which is what keeps long recordings from
+   degrading. No "early change" -- that is TIFF's variant, and using it here produces files that
+   decode as garbage. */
+function lzwEncode(minCodeSize, px) {
+  const clear = 1 << minCodeSize, eoi = clear + 1;
+  const out = [];
+  let codeSize = minCodeSize + 1, next = eoi + 1, dict = new Map();
+  let cur = 0, bits = 0;
+  const emit = (code) => {
+    cur |= code << bits; bits += codeSize;
+    while (bits >= 8) { out.push(cur & 255); cur >>>= 8; bits -= 8; }
+  };
+  emit(clear);
+  let prefix = px[0];
+  for (let i = 1; i < px.length; i++) {
+    const k = px[i], key = prefix * 4096 + k;
+    const found = dict.get(key);
+    if (found !== undefined) { prefix = found; continue; }
+    emit(prefix);
+    if (next < 4096) {
+      dict.set(key, next++);
+      // Widen when the largest code now in the table would not fit, i.e. next - 1 > 2^size - 1.
+      // Widening one code earlier (next === 1 << size) desynchronises every decoder: they add table
+      // entries one behind the encoder, so they would still be reading at the old width.
+      if (next === (1 << codeSize) + 1 && codeSize < 12) codeSize++;
+    } else {
+      emit(clear);
+      dict = new Map(); next = eoi + 1; codeSize = minCodeSize + 1;
+    }
+    prefix = k;
+  }
+  emit(prefix);
+  emit(eoi);
+  if (bits > 0) out.push(cur & 255);
+  return out;
+}
+function encodeGIF(frames, palette, size, delayCs) {
+  const b = [];
+  const u16 = (v) => { b.push(v & 255, (v >> 8) & 255); };
+  for (const ch of "GIF89a") b.push(ch.charCodeAt(0));
+  u16(size); u16(size);
+  b.push(0xf7, 0, 0);                                  // global table, 256 entries, 8 bits/px
+  for (let i = 0; i < 256; i++) {
+    const c = palette[i] || [0, 0, 0];
+    b.push(c[0], c[1], c[2]);
+  }
+  b.push(0x21, 0xff, 0x0b);                            // Netscape looping extension
+  for (const ch of "NETSCAPE2.0") b.push(ch.charCodeAt(0));
+  b.push(0x03, 0x01, 0x00, 0x00, 0x00);                // loop forever
+  for (const f of frames) {
+    b.push(0x21, 0xf9, 0x04, 0x04); u16(delayCs); b.push(0x00, 0x00);   // GCE, disposal = keep
+    b.push(0x2c); u16(0); u16(0); u16(size); u16(size); b.push(0x00);   // image descriptor
+    b.push(8);                                                          // LZW minimum code size
+    const data = lzwEncode(8, f);
+    for (let i = 0; i < data.length; i += 255) {
+      const n = Math.min(255, data.length - i);
+      b.push(n);
+      for (let j = 0; j < n; j++) b.push(data[i + j]);
+    }
+    b.push(0x00);
+  }
+  b.push(0x3b);
+  return new Uint8Array(b);
+}
+function updateRecButton() {
+  const el = document.getElementById("recGifBtn");
+  if (!el) return;
+  el.textContent = Rec.on ? "Stop & save GIF (" + Rec.frames.length + ")" : "Record GIF ●";
+  el.classList.toggle("primary", Rec.on);
+}
+function gifStartRecording() {
+  Rec.on = true;
+  Rec.frames = [];
+  Rec.q = makeQuantizer(themeSeedColors());
+  gifCaptureFrame();                                   // frame 0: the stage as it stands right now
+  updateRecButton();
+}
+function gifCaptureFrame() {
+  if (!Rec.on || Rec.frames.length >= GIF_MAX_FRAMES) return;
+  const off = renderStageOffscreen(GIF_SIZE);
+  const data = off.getContext("2d").getImageData(0, 0, GIF_SIZE, GIF_SIZE).data;
+  const idx = new Uint8Array(GIF_SIZE * GIF_SIZE);
+  const q = Rec.q;
+  for (let p = 0, i = 0; p < idx.length; p++, i += 4) idx[p] = q.index(data[i], data[i + 1], data[i + 2]);
+  Rec.frames.push(idx);
+  updateRecButton();
+  if (Rec.frames.length >= GIF_MAX_FRAMES) gifFinish();   // cap reached: write it out
+}
+function gifFinish() {
+  if (!Rec.on) return;
+  Rec.on = false;
+  const el = document.getElementById("recGifBtn");
+  if (el) { el.textContent = "encoding " + Rec.frames.length + " frames…"; el.disabled = true; el.classList.remove("primary"); }
+  // let that label paint before the encoder takes the thread
+  setTimeout(() => {
+    try {
+      if (Rec.frames.length > 0) {
+        const bytes = encodeGIF(Rec.frames, Rec.q.pal, GIF_SIZE, GIF_DELAY_CS);
+        deliverBlob(new Blob([bytes], { type: "image/gif" }),
+                    "brec_" + App.modeName + "_" + Rec.frames.length + "frames_" + currentTheme() + ".gif");
+      }
+    } finally {
+      Rec.frames = []; Rec.q = null;
+      if (el) el.disabled = false;
+      updateRecButton();
+    }
+  }, 30);
+}
+function toggleGifRecording() { Rec.on ? gifFinish() : gifStartRecording(); }
+
 function stopRun() {
   App.running = false;
   clearTimeout(App.timerId);
@@ -2513,6 +2691,7 @@ function wireRunControls() {
   document.getElementById("stopBtn").addEventListener("click", stopRun);
   document.getElementById("resetRunBtn").addEventListener("click", newRunFromScratch);
   document.getElementById("exportPngBtn").addEventListener("click", exportStagePNG);
+  document.getElementById("recGifBtn").addEventListener("click", toggleGifRecording);
   document.getElementById("presetBidir").addEventListener("click", () => setModePreset("bidir"));
   document.getElementById("presetFwd").addEventListener("click", () => setModePreset("fwd"));
   document.getElementById("presetBwd").addEventListener("click", () => setModePreset("bwd"));
