@@ -2111,7 +2111,15 @@ function exportStagePNG() {
    entry. A 32768-slot lookup keyed on the top 5 bits per channel memoises every decision, so the
    expensive nearest-colour scan runs at most once per distinct quantised colour rather than per
    pixel. Frames are stored as one byte per pixel, so a full recording is a few tens of MB. */
-const GIF_SIZE = 420, GIF_MAX_FRAMES = 200, GIF_DELAY_CS = 10;
+/* 1680px square. Encoding is not the constraint -- even a long recording compresses in a few
+   seconds -- the RAM holding captured frames is, at one byte per pixel: 2.7 MB each at this size. So
+   the frame cap is derived from a memory budget rather than fixed independently, and raising
+   GIF_SIZE lowers it automatically instead of quietly costing four times the memory. The budget is
+   only a ceiling; a recording actually costs frames x GIF_SIZE^2, so a typical 25-50 frame capture
+   holds 70-135 MB and the cap only bites if you leave it running. */
+const GIF_SIZE = 1680, GIF_DELAY_CS = 10;
+const GIF_FRAME_BUDGET_BYTES = 256 * 1024 * 1024;
+const GIF_MAX_FRAMES = Math.max(30, Math.min(300, Math.floor(GIF_FRAME_BUDGET_BYTES / (GIF_SIZE * GIF_SIZE))));
 const Rec = { on: false, frames: [], q: null };
 
 function hexToRgb(h) {
