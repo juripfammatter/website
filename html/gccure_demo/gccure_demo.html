@@ -1,9 +1,10 @@
 <title>Bidirectional Reachability Expansion Curriculum</title>
 <style>
-  /* Single-theme by choice: this page is an instrument panel, and committing to one dark ground
-     lets every hue be tuned for exactly that background instead of compromising across two.
-     The viewer's light/dark toggle is deliberately not honoured — there is one visual world here. */
-  :root, :root[data-theme="dark"], :root[data-theme="light"] {
+  /* Two themes, dark by default. Every colour on the page comes either from these variables or
+     from the matching JS palette (DARK_PALETTE / LIGHT_PALETTE, read through pal()), so the toggle
+     in the header is the single switch for both the chrome and the canvases. The choice persists in
+     localStorage; nothing follows the OS preference, so the page always opens the way it was left. */
+  :root, :root[data-theme="dark"] {
     --bg:#0b1013; --bg-raised:#121a1e; --bg-sunken:#080d0f;
     --ink:#e9eff0; --ink-dim:#9aacab; --ink-faint:#61736f;
     --line:#222e31; --line-strong:#33454a;
@@ -17,6 +18,19 @@
     --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
     color-scheme: dark;
   }
+  :root[data-theme="light"] {
+    --bg:#f3f5f4; --bg-raised:#ffffff; --bg-sunken:#e9edec;
+    --ink:#1b2428; --ink-dim:#4e5f64; --ink-faint:#86969a;
+    --line:#d8dfe0; --line-strong:#b9c4c6;
+    --start:#1c7ed6; --goal:#e8590c; --success:#2f9e44;
+    --success-soft:#d3f4dc; --warn-soft:#fff1c2;
+    --wall:#3b4b53; --floor:#f7f8f7; --floor-line:#e3e8e8;
+    --shadow: 0 1px 2px rgba(20,30,34,.10), 0 8px 22px rgba(20,30,34,.10);
+    color-scheme: light;
+  }
+  /* The pseudocode SVGs are black-on-transparent: inverted for the dark ground (see .alg-fig img),
+     shown as-is on the light one. */
+  :root[data-theme="light"] .alg-fig img { filter: none; }
 
   * { box-sizing: border-box; }
   html, body { margin:0; padding:0; }
@@ -44,6 +58,7 @@
   }
   .tab-btn:hover { color: var(--ink); border-color: var(--line-strong); }
   .tab-btn.active { background: var(--ink); border-color: var(--ink); color: var(--bg-raised); }
+  .tab-btn.theme-btn { margin-left: 10px; }
 
   main { padding: 16px 20px 6px; max-width: 1600px; margin: 0 auto; }
   .view { display: none; }
@@ -253,6 +268,7 @@
     <button class="tab-btn active" data-view="explain">Explain</button>
     <button class="tab-btn" data-view="compare">Compare</button>
     <button class="tab-btn" data-view="algorithm">Pseudocode</button>
+    <button class="tab-btn theme-btn" id="themeBtn" title="Switch between dark and light" aria-label="Toggle colour theme">☀ light</button>
   </div>
 </header>
 
@@ -270,6 +286,7 @@
         <button class="btn" id="runBtn">Run</button>
         <button class="btn" id="stopBtn" disabled>Stop</button>
         <button class="btn" id="resetRunBtn">Reset run</button>
+        <button class="btn" id="exportPngBtn" title="Save the stage as it is right now (current phase, or the scrubbed-to iteration) as a PNG">Export PNG ↧</button>
         <label>speed <input type="range" id="speedRange" min="1" max="8" value="4" style="width:90px;vertical-align:middle"></label>
         <span class="spacer"></span>
         <span class="stat">iteration <b id="statIter">0</b></span>
@@ -290,6 +307,7 @@
         <h2>Maze stage</h2>
         <div class="toolbar">
           <select id="presetSelect">
+            <option value="ring" selected>Broken ring 7×7</option>
             <option value="blank">Blank 11×11</option>
             <option value="medium">Medium maze</option>
             <option value="g">G-maze</option>
@@ -488,8 +506,28 @@ const DARK_PALETTE = {
   goalGeneric: "#FF922B",
   success: "#51CF66",
 };
-/* Single committed theme — no light variant to switch to. */
-function pal() { return DARK_PALETTE; }
+/* Light twin. Same colour language; walls are DARKER than the floor here, since on a light ground
+   a darker block reads as solid structure. Tree hues are pulled down a step so the thin rollout
+   strokes keep contrast against white, and start/goal/success stay the same three hue families so
+   nothing has to be re-learned when switching. */
+const LIGHT_PALETTE = {
+  bgRaised: "#ffffff", ink: "#1b2428", inkDim: "#4e5f64", inkFaint: "#86969a", line: "#d8dfe0",
+  wall: "#3b4b53", floor: "#f7f8f7", floorLine: "#e3e8e8",
+  start: "#1c7ed6",
+  startShades: ["#1c7ed6", "#4dabf7", "#1864ab", "#7048e8"],
+  goalShades: ["#e8590c", "#e03131", "#d6336c", "#f08c00"],
+  goalGeneric: "#e8590c",
+  success: "#2f9e44",
+};
+const THEME_KEY = "gccure-demo-theme";
+function currentTheme() { return document.documentElement.dataset.theme === "light" ? "light" : "dark"; }
+function pal() { return currentTheme() === "light" ? LIGHT_PALETTE : DARK_PALETTE; }
+function applyTheme(theme, persist) {
+  document.documentElement.dataset.theme = theme;
+  if (persist) { try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* private mode etc. */ } }
+  const btn = document.getElementById("themeBtn");
+  if (btn) btn.textContent = theme === "light" ? "☾ dark" : "☀ light";
+}
 function goalColor(colors, k) { return colors.goalShades[k % colors.goalShades.length]; }
 function startColor(colors, k) { return colors.startShades[(k || 0) % colors.startShades.length]; }
 
@@ -504,6 +542,10 @@ const MAZES = {
     "WooooooWoooW", "WoWWoWoWoWoW", "WooooWoooooW", "WWWWWWWWWWWW",
   ],
   g: ["WWWWWWW", "WooooGW", "WoWWWWW", "WoWIooW", "WoWWWoW", "WoooooW", "WWWWWWW"],
+  // Ring corridor around a solid 3x3 core, broken at (1,3). Going left along the bottom from S is
+  // the SHORTER way toward G and dead-ends after two cells; the only route is the long way up the
+  // right side and back along the top. The boot default.
+  ring: ["WWWWWWW", "WGooooW", "WoWWWoW", "WWWWWoW", "WoWWWoW", "WooooIW", "WWWWWWW"],
 };
 const MAX_GOALS = 4;
 
@@ -619,6 +661,72 @@ function geodesicPathToGoal(grid, distArr, fromX, fromY) {
     idx = best;
     const { cx, cy } = cellXY(grid, idx);
     pts.push({ x: cx + 0.5, y: cy + 0.5 });
+  }
+  return pts;
+}
+
+/* Display geometry for a rollout. The simulated path is a continuous trace that hugs walls and
+   jitters under the turn-rate limit; drawn raw, thirty of them are noise. This rebuilds each one as
+   a curve that keeps three things exactly -- the start point, the end point, and the sequence of
+   cells the agent passed through -- and nothing else.
+
+   1. Cell sequence: every cell the trace entered, in order, consecutive repeats dropped. A step of
+      up to 0.55 at 45deg can hop DIAGONALLY between cells (the simulator only checks the landing
+      point), cutting a corner that a wall may share. Such hops get the free orthogonal neighbour
+      inserted -- the one nearer the trace's own midpoint -- so the drawn route only ever moves
+      between 4-adjacent cells; that is the one place it adds a cell the trace did not strictly
+      occupy, and it is the agent's own corner-cut made explicit.
+   2. Polyline: exact start, the CENTRE of every interior cell, exact end. The first and last cells
+      contribute the real endpoints rather than their centres, so nothing hooks back to a centre it
+      never needed to visit. Each segment joins a point in one cell to a point in a 4-adjacent cell,
+      and two adjacent cells form a convex 2x1 box, so every segment is wall-free.
+   3. Chaikin corner cutting, which is a quadratic B-spline with the ends pinned. It never leaves the
+      convex hull of three consecutive points, and every such hull here lies inside one cell or one
+      adjacent pair (the worst case is a start point in a far corner, whose 75%-point still lands
+      within 0.4 of the next centre), so the smoothed curve cannot touch a wall either.
+   Straight runs stay straight, turns become arcs, and a route that doubles back keeps a visible
+   spike where the agent actually reversed. */
+function smoothCellPath(grid, path, passes) {
+  if (!path || path.length < 2) return (path || []).map((p) => [p.x, p.y]);
+  const cells = [];
+  for (let n = 0; n < path.length; n++) {
+    const p = path[n];
+    const idx = cellIdxOf(grid, p.x, p.y);
+    if (cells.length === 0) { cells.push(idx); continue; }
+    const prev = cells[cells.length - 1];
+    if (idx === prev) continue;
+    const a = cellXY(grid, prev), b = cellXY(grid, idx);
+    if (Math.abs(a.cx - b.cx) === 1 && Math.abs(a.cy - b.cy) === 1) {
+      // diagonal hop: route through a free orthogonal neighbour
+      const c1 = b.cy * grid.W + a.cx, c2 = a.cy * grid.W + b.cx;
+      const free1 = !grid.walls[c1], free2 = !grid.walls[c2];
+      if (free1 || free2) {
+        let via = free1 ? c1 : c2;
+        if (free1 && free2) {
+          const q = path[n - 1];
+          const mx = (q.x + p.x) / 2, my = (q.y + p.y) / 2;
+          const d1 = Math.hypot(a.cx + 0.5 - mx, b.cy + 0.5 - my), d2 = Math.hypot(b.cx + 0.5 - mx, a.cy + 0.5 - my);
+          via = d1 <= d2 ? c1 : c2;
+        }
+        cells.push(via);
+      }
+    }
+    cells.push(idx);
+  }
+  const first = path[0], last = path[path.length - 1];
+  let pts = [[first.x, first.y]];
+  for (let i = 1; i < cells.length - 1; i++) { const { cx, cy } = cellXY(grid, cells[i]); pts.push([cx + 0.5, cy + 0.5]); }
+  pts.push([last.x, last.y]);
+  for (let k = 0; k < (passes == null ? 3 : passes); k++) {
+    if (pts.length < 3) break;
+    const out = [pts[0]];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      out.push([0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]]);
+      out.push([0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]]);
+    }
+    out.push(pts[pts.length - 1]);
+    pts = out;
   }
   return pts;
 }
@@ -865,6 +973,7 @@ function newGoalBufferSized(cfg, size) {
   return new SimilarityBuffer({ searchProj: projGoalXY, noveltyProj: projGoalXY, maxSize: size });
 }
 const HISTORY_CAP = 400;
+const SERIES_CAP = 5000;
 
 class Curriculum {
   constructor(cfg, grid, mode) {
@@ -894,6 +1003,13 @@ class Curriculum {
     this.startCoverEver = Array.from({ length: this.numAnchors }, () => new Uint8Array(n));
     this.goalFrontierEver = new Uint8Array(n); // in-band: r_min <= reward <= r_max, not yet solved
     this.startFrontierEver = Array.from({ length: this.numAnchors }, () => new Uint8Array(n));
+    /* The first rollout that PROVES anchor k, kept verbatim so the solution can be drawn. This is
+       the real trajectory, not a reconstruction: goalAchievedFlags() flips exactly when a forward
+       rollout solves with its commanded goal in the anchor cell (start region -> goal) or a
+       backward rollout solves having spawned in the start cell (start -> goal). Either way the
+       stored path already runs start -> goal, so both directions are drawn the same way. Captured
+       once and never overwritten -- it is the proof, not the latest attempt. */
+    this.foundPaths = Array.from({ length: this.numAnchors }, () => null);
 
     this.goalFrontier = newGoalBufferSized(cfg, cfg.frontierBufSize);
     this.goalSolved = newGoalBufferSized(cfg, cfg.solvedBufSize);
@@ -930,25 +1046,63 @@ class Curriculum {
   }
   goalsReachedCount() { return this.goalAchievedFlags().filter(Boolean).length; }
 
+  /* Env split. The two directions ALWAYS get the same number of envs, which the naive
+     floor-each-ratio-then-dump-the-residual rule did not: at 8 envs it produced fwd 5 / bwd 3, and at
+     12 envs fwd 8 / bwd 4, so a "bidirectional" run was quietly forward-weighted exactly in the range
+     you would pick to reduce on-screen clutter.
+
+     Order of decisions:
+       1. `anchor` is taken off the top. It is shared by both directions (routed into both bands), so
+          it sits outside the balance. It also absorbs the parity remainder, since `total - anchor`
+          has to be even for the two halves to be equal -- and it is floored at one env whenever its
+          ratio is non-zero, because it is the only branch that runs the true start -> goal task and
+          therefore the only one that can certify a goal as reached. Flooring it went from a nicety to
+          a necessity once the split stopped over-feeding it by accident: it used to reach zero below
+          twenty envs.
+       2. Each direction gets exactly half of what is left.
+       3. Inside a half, explore/exploit split by their own ratios with the residual going to the
+          larger fractional part. Both directions run the identical computation, so they stay mirror
+          images by construction rather than by luck.
+     A single-direction preset has one side at ratio zero; there is nothing to balance, so that side's
+     half is handed to the active direction instead. */
   branchCounts() {
-    const raw = [this.cfg.anchorRatio, this.cfg.fwdExploreRatio, this.cfg.fwdExploitRatio, this.cfg.bwdExploreRatio, this.cfg.bwdExploitRatio];
-    const sum = raw.reduce((a, b) => a + b, 0) || 1;
-    const ratios = raw.map((r) => r / sum);
-    const total = this.cfg.numTrainEnvs;
-    const counts = ratios.map((r) => Math.floor(total * r));
-    // Residual goes to the first non-empty branch, matching the real _split_train_envs. Note this
-    // rounds UP toward anchor: at 32 envs the 0.05/0.325/0.15/0.325/0.15 split lands on
-    // anchor:4 fwd:14 bwd:14, so the anchor branch's effective share is ~12.5%, not 5%. That is
-    // load-bearing here -- the anchor role is the only one that runs the true p0 -> G task, and it
-    // is what certifies a goal as reached. Apportioning the residual by largest remainder instead
-    // (anchor:2) is arithmetically honest but ~25% slower to converge in every maze.
-    let residual = total - counts.reduce((a, b) => a + b, 0);
-    if (residual > 0) {
-      let placed = false;
-      for (let i = 0; i < counts.length; i++) if (counts[i] > 0) { counts[i] += residual; placed = true; break; }
-      if (!placed) counts[0] += residual;
+    const cfg = this.cfg;
+    const total = cfg.numTrainEnvs;
+    const fwdR = cfg.fwdExploreRatio + cfg.fwdExploitRatio;
+    const bwdR = cfg.bwdExploreRatio + cfg.bwdExploitRatio;
+    const sum = cfg.anchorRatio + fwdR + bwdR || 1;
+
+    let anchor = Math.floor((total * cfg.anchorRatio) / sum);
+    if (cfg.anchorRatio > 0 && anchor === 0 && total >= 4) anchor = 1;
+    if ((total - anchor) % 2 === 1) anchor += 1;          // parity -> anchor, so the halves are equal
+    anchor = Math.min(anchor, total);
+
+    // one direction's explore/exploit counts from its share `n`, residual to the larger remainder
+    const split = (n, exploreR, exploitR) => {
+      const d = exploreR + exploitR;
+      if (d <= 0 || n <= 0) return [0, 0];
+      const ex = (n * exploreR) / d, it = (n * exploitR) / d;
+      let a = Math.floor(ex), b = Math.floor(it);
+      if (a + b < n) (ex - a >= it - b ? a++ : b++);
+      return [a, b];
+    };
+
+    const rest = total - anchor;
+    let fwd, bwd;
+    if (fwdR > 0 && bwdR > 0) {
+      const half = rest / 2;                              // integer: parity handled above
+      fwd = split(half, cfg.fwdExploreRatio, cfg.fwdExploitRatio);
+      bwd = split(half, cfg.bwdExploreRatio, cfg.bwdExploitRatio);
+    } else if (fwdR > 0) {
+      fwd = split(rest, cfg.fwdExploreRatio, cfg.fwdExploitRatio);
+      bwd = [0, 0];
+    } else if (bwdR > 0) {
+      fwd = [0, 0];
+      bwd = split(rest, cfg.bwdExploreRatio, cfg.bwdExploitRatio);
+    } else {
+      fwd = [0, 0]; bwd = [0, 0]; anchor = total;
     }
-    return { anchor: counts[0], fwdExplore: counts[1], fwdExploit: counts[2], bwdExplore: counts[3], bwdExploit: counts[4] };
+    return { anchor, fwdExplore: fwd[0], fwdExploit: fwd[1], bwdExplore: bwd[0], bwdExploit: bwd[1] };
   }
 
   proposeGoalOne() {
@@ -1002,6 +1156,10 @@ class Curriculum {
     const startFrac = countTrueAny(this.startCoverEver, n) / this._totalFree;
     this.coverageHistory.push({ iter: this.iterations, goalFrac, startFrac });
     this.goalsHistory.push({ iter: this.iterations, rate: this.goalsReachedCount() });
+    // The explain run is now unbounded, so cap these the way `history` already is. SERIES_CAP is far
+    // above CMP_ITER_CAP, so the compare charts still see every iteration they produce.
+    if (this.coverageHistory.length > SERIES_CAP) this.coverageHistory.shift();
+    if (this.goalsHistory.length > SERIES_CAP) this.goalsHistory.shift();
     this.history.push({
       iter: this.iterations,
       goalCoverEver: this.goalCoverEver.slice(),
@@ -1098,6 +1256,7 @@ function sampleBackwardWalkSeeds(cur, n) {
 /* ============================== 9. Iteration generator — the 5 phases ============================== */
 function* iterationGenerator(cur) {
   const grid = cur.grid, cfg = cur.cfg, rng = cur.rng;
+  const anchorCells = grid.anchors.map((a) => cellIdxOf(grid, a.x, a.y));
   const frame = {
     phase: 0, walkSeeds: [], walks: [], harvested: [], harvest: { goalCandidate: 0, startCandidate: 0 },
     branchAssignments: [], rollouts: [],
@@ -1138,13 +1297,9 @@ function* iterationGenerator(cur) {
     if (s.dir === "fwd") {
       const kept = cur.goalCandidate.addNovel(subs.map((st) => makePair([st.x, st.y], st)), epsCand);
       frame.harvest.goalCandidate += kept.length;
-      // a forward candidate proposes a GOAL — its pair's goal half is the point of interest
-      kept.forEach((p) => frame.harvested.push({ x: p[0], y: p[1], kind: "G" }));
     } else {
       const kept = cur.startCandidate[s.anchorIdx].addNovel(subs.map((st) => makePair(s.inheritedGoal, st)), epsCand);
       frame.harvest.startCandidate += kept.length;
-      // a backward candidate proposes a START — its pair's state half is the point of interest
-      kept.forEach((p) => frame.harvested.push({ x: p[2], y: p[3], kind: "S", anchorIdx: s.anchorIdx }));
     }
   }
   const counts = cur.branchCounts();
@@ -1173,11 +1328,22 @@ function* iterationGenerator(cur) {
     assignments.push({ branch: "bwd_exploit", spawnState: p.state, goal: p.goal, anchorIdx: k });
   }
   frame.branchAssignments = assignments;
+  // What phase 3 DISPLAYS: the intermediate start/goal each rollout env drew -- exactly one marker
+  // per env, so the rollout-env slider doubles as a clutter control. Every harvested candidate still
+  // enters the buffers above; showing all of them (walk envs x subsamples) buried the ones that
+  // matter this iteration, and the legend already calls this marker "the intermediate goal it aims
+  // at", which only the drawn ones are. Forward roles are defined by their goal, backward roles by
+  // their spawn; the anchor branch is the real goal, so it adds no marker of its own.
+  for (const a of assignments) {
+    if (a.branch === "anchor") continue;
+    const isFwdRole = a.branch === "fwd_explore" || a.branch === "fwd_exploit";
+    if (isFwdRole) frame.harvested.push({ x: a.goal[0], y: a.goal[1], kind: "G" });
+    else frame.harvested.push({ x: a.spawnState.x, y: a.spawnState.y, kind: "S", anchorIdx: a.anchorIdx });
+  }
   yield frame;
 
   // ---- PHASE 4: rollout episodes ----
   frame.phase = 4;
-  const anchorCells = grid.anchors.map((a) => cellIdxOf(grid, a.x, a.y));
   const nCells = grid.W * grid.H;
   // Boost masks are the OTHER tree's proven coverage, computed once for the whole iteration:
   // forward rollouts are helped by every backward tree's covered starts; a backward rollout for
@@ -1219,6 +1385,13 @@ function* iterationGenerator(cur) {
   // ---- PHASE 5: band split + persistent coverage + competence + periodic rebuild ----
   frame.phase = 5;
   const epsSkill = cfg.frontierEps * cfg.frontierEps;
+  const initCellIdx = cellIdxOf(grid, grid.init.x, grid.init.y);
+  /* Record the proving trajectory for anchor k, if it has not been proven before. `via` is which
+     tree closed it, purely for the caption. */
+  const captureFound = (k, path, via) => {
+    if (k == null || k < 0 || cur.foundPaths[k]) return;
+    cur.foundPaths[k] = { path: path.map((q) => ({ x: q.x, y: q.y })), iter: cur.iterations + 1, via };
+  };
   for (const a of assignments) {
     // A rollout that began already inside its goal cell (see spawnAtGoal) is degenerate: it measured
     // no traversal, and its reward is pinned to the frontier ceiling so it can never read as solved.
@@ -1234,6 +1407,8 @@ function* iterationGenerator(cur) {
       if (reward > cfg.rMax) {
         cur.goalSolved.addNovel([pair], epsSkill);
         cur.goalCoverEver[goalCellIdx] = 1;
+        // commanded goal sits in an anchor's own cell -> this rollout just walked start region -> goal
+        captureFound(anchorCells.indexOf(goalCellIdx), a.result.path, "forward");
         frame.bandSplit.fwdSolved++;
       } else if (reward > cfg.rMin) {
         cur.goalFrontier.addNovel([pair], epsSkill);
@@ -1248,6 +1423,8 @@ function* iterationGenerator(cur) {
       if (reward > cfg.rMax) {
         cur.startSolved[k].addNovel([pair], epsSkill);
         cur.startCoverEver[k][startCellIdx] = 1;
+        // spawned in the start cell and reached its anchor -> also a start -> goal traversal
+        if (startCellIdx === initCellIdx) captureFound(k, a.result.path, "backward");
         frame.bandSplit.bwdSolved++;
       } else if (reward > cfg.rMin) {
         cur.startFrontier[k].addNovel([pair], epsSkill);
@@ -1492,6 +1669,25 @@ function drawWalkPath(ctx, pts, color, alpha) {
   }
   ctx.restore();
 }
+/* The captured start -> goal solution(s). Drawn last of the path layers so the answer sits on top
+   of the live rollouts and walks, with a dark halo underneath so it stays readable where it runs
+   over saturated coverage. `maxIter` clips to what had been proven at a scrubbed-to iteration. */
+function drawFoundPaths(ctx, cur, t, colors, maxIter) {
+  if (!cur.foundPaths) return;
+  cur.foundPaths.forEach((f) => {
+    if (!f || (maxIter != null && f.iter > maxIter)) return;
+    const pts = smoothCellPath(cur.grid, f.path).map((q) => toPx(t, q[0], q[1]));
+    if (pts.length < 2) return;
+    ctx.save();
+    ctx.strokeStyle = colors.floor; ctx.globalAlpha = 0.85; ctx.lineWidth = 7.5;
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    ctx.beginPath();
+    pts.forEach((q, i) => { i === 0 ? ctx.moveTo(q[0], q[1]) : ctx.lineTo(q[0], q[1]); });
+    ctx.stroke();
+    ctx.restore();
+    drawSolidPath(ctx, pts, colors.success, 1.0, 3.6, 34);
+  });
+}
 function drawFrame(ctx, cur, frame, t, colors) {
   // Expansion lines take the colour of the tree's ORIGIN, not of what it is chasing:
   //   forward tree grows out of the start region  -> blue
@@ -1538,8 +1734,9 @@ function drawFrame(ctx, cur, frame, t, colors) {
       ctx.restore();
     }
   }
-  // intermediate starts / goals harvested this iteration
-  if (frame.phase >= 3) {
+  // the intermediate starts / goals this iteration's rollout envs drew (phase 4+ redraws each one
+  // as its rollout's endpoint badge, coloured by outcome, so they are only drawn standalone here)
+  if (frame.phase === 3) {
     for (const h of frame.harvested) {
       const [px, py] = toPx(t, h.x, h.y);
       const color = h.kind === "G" ? colors.goalGeneric : startColor(colors, h.anchorIdx);
@@ -1554,7 +1751,7 @@ function drawFrame(ctx, cur, frame, t, colors) {
       // agent physically entered the goal cell") makes the green markers and the shaded cells
       // disagree, since a rollout can finish just short of a distant goal and still clear r_max.
       const color = r.solved ? colors.success : treeColor(r.isFwdRole ? "fwd" : "bwd", r.anchorIdx);
-      const pts = r.path.map((p) => toPx(t, p.x, p.y));
+      const pts = smoothCellPath(cur.grid, r.path).map((q) => toPx(t, q[0], q[1]));
       if (pts.length < 2) continue;
       drawSolidPath(ctx, pts, color, r.solved ? 1 : 0.8, r.reachedRealGoal ? 3.2 : r.solved ? 2.6 : 2.1, 26);
     }
@@ -1566,7 +1763,7 @@ function drawFrame(ctx, cur, frame, t, colors) {
       // agent physically entered the goal cell") makes the green markers and the shaded cells
       // disagree, since a rollout can finish just short of a distant goal and still clear r_max.
       const color = r.solved ? colors.success : treeColor(r.isFwdRole ? "fwd" : "bwd", r.anchorIdx);
-      const pts = r.path.map((p) => toPx(t, p.x, p.y));
+      const pts = r.path.map((p) => toPx(t, p.x, p.y));   // badges only need the true endpoints
       if (pts.length < 2) continue;
       // Only the endpoint this rollout is actually *about*: a forward episode is defined by the
       // intermediate GOAL it was sent to (its start is always the start region); a backward episode
@@ -1593,9 +1790,10 @@ function renderStage(canvas, cur, frame) {
   drawCoverageArrays(ctx, cur.grid, cur.goalCoverEver, cur.goalFrontierEver, cur.startCoverEver, cur.startFrontierEver, t, colors);
   drawBufferMarkers(ctx, cur, t, colors);
   if (frame) drawFrame(ctx, cur, frame, t, colors);
+  drawFoundPaths(ctx, cur, t, colors, null);
   drawStartAndGoals(ctx, cur.grid, cur.goalAchievedFlags(), t, colors);
 }
-function renderStageSnapshot(canvas, grid, snap) {
+function renderStageSnapshot(canvas, grid, snap, cur) {
   const ctx = canvas.getContext("2d");
   const colors = pal();
   const t = stageTransform(canvas, grid);
@@ -1605,6 +1803,7 @@ function renderStageSnapshot(canvas, grid, snap) {
   ctx.clearRect(0, 0, sz.w, sz.h);
   drawFloorAndWalls(ctx, grid, t, colors);
   drawCoverageArrays(ctx, grid, snap.goalCoverEver, snap.goalFrontierEver, snap.startCoverEver, snap.startFrontierEver, t, colors);
+  if (cur) drawFoundPaths(ctx, cur, t, colors, snap.iter);
   drawStartAndGoals(ctx, grid, flags, t, colors);
 }
 function renderMiniStage(canvas, cur) {
@@ -1710,6 +1909,8 @@ function buildLegend(container, cur) {
         rows.push([done ? "badgeGdone" : "badgeG", done ? colors.success : goalColor(colors, k),
           (cur.numAnchors > 1 ? "goal " + (k + 1) : "goal") + (done ? " — reached" : "")]);
       });
+      if (cur.foundPaths && cur.foundPaths.some(Boolean))
+        rows.push(["rollout", colors.success, "proven start → goal path"]);
       return rows;
     })()],
     ["proven coverage", [
@@ -1767,7 +1968,7 @@ const LAST_PHASE = PHASE_NAMES.length;
 const PHASE_HINTS = [
   "Select seeds for the random walks. Both modes seed from THIS tree's own mixed buffer and differ only in the attractor that picks which entry. Voronoi: a fresh random task-space point. Connect: a proven state from the OPPOSITE tree's solved buffer, so each tree grows toward the other's provable meeting points.",
   "Walk from that seed under random steering. No competence gating and no goal: this is pure physics-driven exploration of what lies just beyond the frontier.",
-  "Subsample each random walk into the candidate buffers, then draw this iteration's tasks from them. The full state is projected to the goal space (here xy). Candidates persist across iterations.",
+  "Subsample each random walk into the candidate buffers, then draw this iteration's tasks from them: shown is the intermediate goal or start each rollout env drew, one marker per env. The full state is projected to the goal space (here xy). Candidates persist across iterations.",
   "Forward expansion rollouts are initialized on the initial distribution and goal-conditioned on the intermediate goals; backward expansion rollouts are initialized on the intermediate starts and goal-conditioned on the targeted goal.",
   "Threshold each rollout by its return: above r_max joins the solved buffer, inside the r_min..r_max band joins the frontier, below is discarded. Then the mixed buffers are rebuilt as frontier plus a replay fraction of solved -- the pool the next iteration seeds and exploits from.",
 ];
@@ -1784,18 +1985,22 @@ function newRunFromScratch() {
   redrawExplain();
 }
 function ensureGenerator() { if (!App.gen) App.gen = iterationGenerator(App.cur); }
-function checkAchievedStop() {
-  const flags = App.cur.goalAchievedFlags();
-  if (flags.length > 0 && flags.every(Boolean)) {
-    const b = document.getElementById("achievedBanner");
-    b.textContent = (flags.length === 1
-      ? "Goal reached at iteration " + App.cur.iterations
-      : "All " + flags.length + " goals reached at iteration " + App.cur.iterations) + " — run stopped.";
-    b.classList.add("show");
-    stopRun();
-    return true;
-  }
-  return false;
+/* Reaching every goal no longer ends the run -- expansion carries on indefinitely, so the frontier
+   can be watched long after the first solution exists. The proven path is drawn on the stage and
+   this banner names the iteration it was found on (frozen at that value, not the live counter). */
+function updateAchievedBanner() {
+  const b = document.getElementById("achievedBanner");
+  const found = App.cur.foundPaths ? App.cur.foundPaths.filter(Boolean) : [];
+  if (found.length === 0) { b.classList.remove("show"); return; }
+  const total = App.cur.numAnchors;
+  const lastIter = Math.max(...found.map((f) => f.iter));
+  const head = total === 1
+    ? "Goal reached at iteration " + lastIter
+    : found.length < total
+      ? found.length + " of " + total + " goals reached"
+      : "All " + total + " goals reached by iteration " + lastIter;
+  b.textContent = head + " — proven path" + (found.length > 1 ? "s" : "") + " shown in green. Run continues.";
+  b.classList.add("show");
 }
 function stepOnce() {
   App.scrubIndex = null;
@@ -1803,7 +2008,7 @@ function stepOnce() {
   const res = App.gen.next();
   if (res.done) { App.gen = iterationGenerator(App.cur); App.frame = App.gen.next().value; }
   else App.frame = res.value;
-  if (App.frame.phase === LAST_PHASE) { App.gen = null; checkAchievedStop(); }
+  if (App.frame.phase === LAST_PHASE) { App.gen = null; updateAchievedBanner(); }
   redrawExplain();
 }
 function drainIteration() {
@@ -1816,7 +2021,7 @@ function drainIteration() {
 function stepIteration() {
   App.scrubIndex = null;
   drainIteration();
-  checkAchievedStop();
+  updateAchievedBanner();
   redrawExplain();
 }
 function startRun() {
@@ -1828,12 +2033,58 @@ function startRun() {
   const tick = () => {
     if (!App.running) return;
     drainIteration();
-    const done = checkAchievedStop();
+    updateAchievedBanner();
     redrawExplain();
-    if (done) return;
     App.timerId = setTimeout(tick, Math.round(650 / Number(document.getElementById("speedRange").value)));
   };
   tick();
+}
+/* Re-renders whatever the stage is showing -- the live frame, or the history snapshot being
+   scrubbed -- onto an offscreen canvas at a fixed 4x of the on-screen logical size, paints the
+   panel background behind it (the stage itself is transparent outside the grid), and hands it to
+   the browser as a PNG. Drawing again rather than copying the screen canvas keeps the output
+   independent of the current window size and device pixel ratio. */
+function exportStagePNG() {
+  const src = document.getElementById("stageCanvas");
+  const { w, h } = logicalSize(src);
+  const scale = 4;
+  const off = document.createElement("canvas");
+  off.width = Math.round(w * scale); off.height = Math.round(h * scale);
+  off._logicalW = w; off._logicalH = h;              // logicalSize()/stageTransform() read these
+  const ctx = off.getContext("2d");
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  const scrubbing = App.scrubIndex != null && App.cur.history.length > 0;
+  const snap = scrubbing ? App.cur.history[Math.min(App.scrubIndex, App.cur.history.length - 1)] : null;
+  if (snap) renderStageSnapshot(off, App.cur.grid, snap, App.cur);
+  else renderStage(off, App.cur, App.frame);
+  // render* start with clearRect, so the background goes in afterwards, underneath
+  ctx.save();
+  ctx.globalCompositeOperation = "destination-over";
+  ctx.fillStyle = pal().bgRaised;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+  const iter = snap ? snap.iter : App.cur.iterations;
+  const phase = snap ? "snapshot" : App.frame ? "phase" + App.frame.phase : "init";
+  const name = "brec_" + App.modeName + "_iter" + iter + "_" + phase + "_" + currentTheme() + ".png";
+  const deliver = (blob) => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    try {
+      const a = document.createElement("a");
+      a.href = url; a.download = name; a.rel = "noopener";
+      document.body.appendChild(a); a.click(); a.remove();
+    } catch (e) {
+      // embedded views that block downloads: at least show it, so it can be saved by hand
+      window.open(url, "_blank");
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
+  if (off.toBlob) off.toBlob(deliver, "image/png");
+  else { // very old engines: data URL route
+    const a = document.createElement("a");
+    a.href = off.toDataURL("image/png"); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
 }
 function stopRun() {
   App.running = false;
@@ -1848,7 +2099,7 @@ function redrawExplain() {
   const wrap = document.getElementById("stageWrap");
   const scrubbing = App.scrubIndex != null && App.cur.history.length > 0;
   wrap.classList.toggle("scrubbing", scrubbing);
-  if (scrubbing) renderStageSnapshot(canvas, App.cur.grid, App.cur.history[Math.min(App.scrubIndex, App.cur.history.length - 1)]);
+  if (scrubbing) renderStageSnapshot(canvas, App.cur.grid, App.cur.history[Math.min(App.scrubIndex, App.cur.history.length - 1)], App.cur);
   else renderStage(canvas, App.cur, App.frame);
   buildLegend(document.getElementById("legendRow"), App.cur);
   updatePhaseStrip();
@@ -1988,7 +2239,12 @@ function wireSliders() {
 /* Single-direction modes zero BOTH connect ratios: connect's attractor is the opposite tree's solved
    buffer, which in a single-direction run is either never written or never read. */
 const MODE_PRESETS = {
-  bidir: { anchorRatio: 0.05, fwdExploreRatio: 0.325, fwdExploitRatio: 0.15, bwdExploreRatio: 0.325, bwdExploitRatio: 0.15, goalConnectRatio: 0.5, skillConnectRatio: 0.5 },
+  // anchorRatio 0.10, not the 0.05 this carried before the split was balanced. The old
+  // floor-then-dump-the-residual rule handed anchor the entire remainder, so a nominal 5% was
+  // really 12.5% at 32 envs -- and that over-feeding was load-bearing, since anchor is the only
+  // branch that certifies a goal. Balancing the directions removed the accident, so the share
+  // anchor actually needs is now stated outright.
+  bidir: { anchorRatio: 0.10, fwdExploreRatio: 0.29, fwdExploitRatio: 0.16, bwdExploreRatio: 0.29, bwdExploitRatio: 0.16, goalConnectRatio: 0.5, skillConnectRatio: 0.5 },
   fwd: { anchorRatio: 0.0, fwdExploreRatio: 0.70, fwdExploitRatio: 0.30, bwdExploreRatio: 0.0, bwdExploitRatio: 0.0, goalConnectRatio: 0.0, skillConnectRatio: 0.0 },
   bwd: { anchorRatio: 0.0, fwdExploreRatio: 0.0, fwdExploitRatio: 0.0, bwdExploreRatio: 0.70, bwdExploitRatio: 0.30, goalConnectRatio: 0.0, skillConnectRatio: 0.0 },
 };
@@ -2256,6 +2512,7 @@ function wireRunControls() {
   document.getElementById("runBtn").addEventListener("click", startRun);
   document.getElementById("stopBtn").addEventListener("click", stopRun);
   document.getElementById("resetRunBtn").addEventListener("click", newRunFromScratch);
+  document.getElementById("exportPngBtn").addEventListener("click", exportStagePNG);
   document.getElementById("presetBidir").addEventListener("click", () => setModePreset("bidir"));
   document.getElementById("presetFwd").addEventListener("click", () => setModePreset("fwd"));
   document.getElementById("presetBwd").addEventListener("click", () => setModePreset("bwd"));
@@ -2400,8 +2657,20 @@ function wireConfigIO() {
   });
 }
 
+function wireTheme() {
+  let saved = null;
+  try { saved = localStorage.getItem(THEME_KEY); } catch (e) { /* ignore */ }
+  applyTheme(saved === "light" ? "light" : "dark", false);
+  document.getElementById("themeBtn").addEventListener("click", () => {
+    applyTheme(currentTheme() === "light" ? "dark" : "light", true);
+    // every canvas reads pal() at draw time, so a redraw of whatever is on screen is the whole job
+    if (App.cur) redrawExplain();
+    if (Cmp.curs.fwd) { redrawCompare(); redrawCompareCharts(); }
+  });
+}
 function boot() {
-  App.grid = loadPreset("blank");
+  wireTheme();
+  App.grid = loadPreset("ring");   // keep in step with the `selected` option in #presetSelect
   App.cfg = defaultCfg();
   App.modeName = "bidir";
   Object.assign(App.cfg, MODE_PRESETS.bidir);
