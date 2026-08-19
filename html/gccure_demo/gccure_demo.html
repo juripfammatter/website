@@ -948,7 +948,18 @@ function defaultCfg() {
     // demo's scale a 5-iteration freeze pins the seed pool to whatever it held 5 iterations ago.
     updateInterval: 1, seed: 42,
     defaultV: 0.55, turnRateMax: 0.9, dt: 1, thetaWeight: 0.6,
-    frontierBufSize: 300, mixedBufSize: 200, candidateBufSize: 400,
+    frontierBufSize: 300, mixedBufSize: 200,
+    /* Candidate FIFO length, Algorithm 1's M_C. This is a recency window, not a reservoir: walks
+       deposit ~20-25 novel states per iteration and the explore branches consume far fewer, so a
+       large buffer accumulates everywhere the walks have EVER been and a uniform draw then samples
+       the whole history rather than the current frontier -- intermediates visibly detach from the
+       walks that are on screen. Measured share of drawn intermediates landing on a cell the same
+       iteration's walks actually visited: 54-72% at 400, 78-85% at 64, 94-95% at 32. Smaller also
+       lets evicted ground become novel again, so admissions per iteration rise as it shrinks.
+       64 rather than 32 because the backward-only arm needs a wider pool -- it degrades sharply
+       below ~96 (on the medium maze, 93 iterations at 400 against 146 at 32) while bidirectional
+       keeps improving all the way down. */
+    candidateBufSize: 64,
     // solved buffers are effectively unbounded: once a state is proven solved it stays proven, so
     // unlike frontier/candidate there is no FIFO cap evicting old entries out from under the mixed
     // sample. Finite (not Infinity) because cfg round-trips through JSON.stringify (Export, Compare
